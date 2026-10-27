@@ -111,20 +111,30 @@ jobs:
           echo "=== Runtime built ==="
           find . -name "*.so" -exec ls -lh {} \;
           find . -name "*.a" -exec ls -lh {} \;
+          
+          echo "=== All files in build_android ==="
+          find . -type f -name "*.so" -o -name "*.a" | head -30
+          
+          # Also check parent directory
+          echo "=== Checking parent directory for libs ==="
+          find .. -maxdepth 3 -name "*.so" -type f 2>/dev/null | head -20
 
       - name: Prepare libraries for APK
         run: |
           mkdir -p launcher/src/main/jniLibs/arm64-v8a
           
+          echo "=== Current working directory ==="
+          pwd
+          
           echo "=== Checking all possible library locations ==="
-          echo "--- build_android ---"
+          echo "--- build_android (relative to repo root) ---"
           find build_android -type f \( -name "*.so" -o -name "*.a" \) -exec ls -la {} \;
           
           echo "--- fexcore-install ---"
           ls -la ~/fexcore-install/lib/ 2>/dev/null || echo "fexcore-install/lib not found"
           
-          echo "--- src directory ---"
-          find . -path "*/src/*" -name "*.so" -exec ls -la {} \; 2>/dev/null || true
+          echo "--- repo root search ---"
+          find . -name "*.so" -type f 2>/dev/null | head -30
           
           echo "--- Copying .so files from build_android ---"
           find build_android -name "*.so" -exec cp {} launcher/src/main/jniLibs/arm64-v8a/ \;
