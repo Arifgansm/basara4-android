@@ -57,6 +57,7 @@ if(BUILD_CPU)
     # Include FEXCore if available
     if(EXISTS "${FEXCORE_PATH}/CMakeLists.txt")
         message(STATUS "FEXCore found at ${FEXCORE_PATH}")
+        list(APPEND CMAKE_MODULE_PATH "${FEXCORE_PATH}/Data/CMake")
         add_subdirectory("${FEXCORE_PATH}" "${CMAKE_BINARY_DIR}/fexcore" EXCLUDE_FROM_ALL)
     else()
         message(WARNING "FEXCore not found at ${FEXCORE_PATH}")
