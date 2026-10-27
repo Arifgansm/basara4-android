@@ -34,6 +34,25 @@ if(ANDROID)
     set(ANDROID_LIBS ${LOG_LIB} ${ANDROID_LIB} ${EGL_LIB} ${GLES_LIB} ${VULKAN_LIB})
 endif()
 
+# Build LibAtrac9 as static library (shared between runtime and tests)
+add_library(libatrac9 STATIC
+    third_party/LibAtrac9/C/src/huffCodes.c
+    third_party/LibAtrac9/C/src/unpack.c
+    third_party/LibAtrac9/C/src/band_extension.c
+    third_party/LibAtrac9/C/src/bit_allocation.c
+    third_party/LibAtrac9/C/src/bit_reader.c
+    third_party/LibAtrac9/C/src/decinit.c
+    third_party/LibAtrac9/C/src/decoder.c
+    third_party/LibAtrac9/C/src/imdct.c
+    third_party/LibAtrac9/C/src/libatrac9.c
+    third_party/LibAtrac9/C/src/quantization.c
+    third_party/LibAtrac9/C/src/scale_factors.c
+)
+target_include_directories(libatrac9 PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/LibAtrac9/C/src
+)
+target_compile_options(libatrac9 PRIVATE -std=c99 -O2 -w)
+
 if(BUILD_CPU)
     # Include FEXCore if available
     if(EXISTS "${FEXCORE_PATH}/CMakeLists.txt")

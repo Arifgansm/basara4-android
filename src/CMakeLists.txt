@@ -9,7 +9,6 @@ add_library(basara4runtime SHARED
     runtime_audio.c
     runtime_pad.c
     probe.c
-    # Add other runtime_*.c files as needed
 )
 
 # Platform-specific sources
@@ -20,10 +19,11 @@ if(ANDROID)
     target_link_libraries(basara4runtime PRIVATE
         ${ANDROID_LIBS}
         basara4cpu  # FEXCore backend
+        libatrac9   # ATRAC9 audio decoder
     )
 else()
     target_link_libraries(basara4runtime PRIVATE
-        dl pthread m
+        dl pthread m libatrac9
     )
 endif()
 
@@ -31,7 +31,7 @@ endif()
 target_include_directories(basara4runtime PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../cpu
-    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/LibAtrac9/C/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/LibAtrac9/C/src
 )
 
 # Compile definitions
