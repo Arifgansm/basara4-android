@@ -1,26 +1,35 @@
-# GitHub repository URL for the basara4-android project
-# Replace with your actual repo URL after creating it
+#!/bin/bash
+# 一键推送 basara4-android 到 GitHub 并触发 Actions
+# 使用方法: bash PUSH_TO_GITHUB.sh
+set -e
+
 REPO_URL="https://github.com/YOUR_USERNAME/basara4-android.git"
 
-# Branch to push to
-BRANCH="main"
-
-echo "=== Setup Steps ==="
+echo "=== 准备推送到 GitHub ==="
 echo ""
-echo "1. Create a new GitHub repository at:"
-echo "   $REPO_URL"
+echo "请在浏览器中操作以下步骤："
 echo ""
-echo "2. Then run these commands:"
+echo "【第 1 步】在 GitHub 创建仓库"
+echo "  访问 https://github.com/new"
+echo "  仓库名: basara4-android"
+echo "  Visibility: Public"
+echo "  不要勾选 Initialize with README"
+echo "  点击 Create repository"
 echo ""
-echo "   git remote add origin $REPO_URL"
-echo "   git branch -M main"
-echo "   git push -u origin main"
+echo "【第 2 步】复制你的 GitHub username"
 echo ""
-echo "3. Enable GitHub Actions in your repo settings"
-echo "   Settings → Actions → General → Allow all actions and reusable workflows"
+echo "【第 3 步】在 Termux 中执行以下命令（替换 YOUR_USERNAME）:"
 echo ""
-echo "4. Manual trigger: https://github.com/YOUR_USERNAME/basara4-android/actions/workflows/build-android.yml"
+echo "  cd ~/basara4_android"
+echo "  git remote add origin $REPO_URL"
+echo "  git branch -M main"
+echo "  git push -u origin main"
 echo ""
-echo "Expected output:"
-echo "  - Artifacts: basara4-native-libs (contains .so files)"
-echo "  - Artifacts: basara4-android-debug (contains APK)"
+echo "【第 4 步】等待 Actions 自动构建"
+echo "  访问: https://github.com/YOUR_USERNAME/basara4-android/actions"
+echo "  或手动触发: https://github.com/YOUR_USERNAME/basara4-android/actions/workflows/build-android.yml"
+echo ""
+echo "构建产物:"
+echo "  - basara4-native-libs: libbasara4cpu.so + libbasara4runtime.so (arm64)"
+echo "  - basara4-android-debug: launcher-debug.apk"
+echo ""
