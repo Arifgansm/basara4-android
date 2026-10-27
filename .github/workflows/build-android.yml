@@ -35,11 +35,22 @@ jobs:
         with:
           packages: ndk;26.0.10792818
 
-      - name: Build FEXCore
+      - name: Test NDK and cmake
+        run: |
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          echo "NDK version: $(ls $ANDROID_HOME/ndk/)"
+          ls -la $ANDROID_HOME/ndk/26.0.10792818/build/cmake/
+          which cmake
+          cmake --version
+
+      - name: Configure FEXCore
         run: |
           cd basara4-android/third_party/FEX
-          echo "Building FEXCore..."
-          cmake -B build \
+          mkdir -p build_arm64
+          cd build_arm64
+          
+          echo "Configuring FEXCore..."
+          cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=~/fexcore-install \
             -DCMAKE_C_COMPILER=aarch64-linux-android-clang \
@@ -55,12 +66,22 @@ jobs:
             -DENABLE_FEX_ALLOCATOR=OFF \
             -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
             -DENABLE_X86_HOST_DEBUG=ON \
-            -DUSE_LINKER=lld
+            -DUSE_LINKER=lld \
+            -G Ninja
           
-          cmake --build build --target FEXCore -j$(nproc)
-          cmake --install build
-          echo "FEXCore built successfully"
-          ls -la ~/fexcore-install/
+          echo "Configuration successful!"
+          ls -la
+
+      - name: Build FEXCore
+        run: |
+          cd basara4-android/third_party/FEX/build_arm64
+          echo "Building FEXCore..."
+          ninja FEXCore -j$(nproc)
+          echo "Build successful!"
+          
+          ninja install
+          echo "Install complete!"
+          ls -la ~/fexcore-install/lib/
 
       - name: Build basara4 libraries
         run: |
