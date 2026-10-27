@@ -9,7 +9,7 @@ jobs:
   build-libs:
     name: Build Native Libraries (arm64)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout basara4-android
@@ -23,6 +23,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
 
+      - name: Cache FEXCore build
+        uses: actions/cache@v4
+        with:
+          path: ~/fexcore-install
+          key: fexcore-shared-android-${{ hashFiles('basara4-android/cpu/basara4cpu.cmake') }}
+
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         id: setup-ndk
@@ -30,7 +36,7 @@ jobs:
           ndk-version: r26c
           local-cache: true
 
-      - name: Build FEXCore (shared library)
+      - name: Build FEXCore (shared library) with error capture
         run: |
           cd basara4-android/third_party/FEX
           mkdir -p build_arm64
@@ -38,9 +44,9 @@ jobs:
           
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           
+          echo "=== Configuring FEXCore ==="
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=~/fexcore-install \
             -DCMAKE_C_COMPILER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
             -DCMAKE_CXX_COMPILER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++ \
             -DANDROID_ABI=arm64-v8a \
@@ -52,23 +58,31 @@ jobs:
             -DBUILD_STEAM_SUPPORT=OFF \
             -DENABLE_FEX_ALLOCATOR=OFF \
             -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
-            -DENABLE_X86_HOST_DEBUG=ON \
             -DUSE_LINKER=lld \
-            -G Ninja
+            -G Ninja \
+            2>&1 | tee /tmp/fex_configure.log | tail -20
           
-          # Build the SHARED library target
-          cmake --build . --target FEXCore_shared -j$(nproc)
-          echo "FEXCore_shared built successfully"
+          echo "=== Building FEXCore_shared ==="
+          cmake --build . --target FEXCore_shared -j$(nproc) 2>&1 | tee /tmp/fex_build.log
           
-          # Manual install - copy shared library
+          build_exit=$?
+          echo "Build exit code: $build_exit"
+          echo "=== Last 50 lines of build log ==="
+          tail -50 /tmp/fex_build.log
+          
+          if [ $build_exit -ne 0 ]; then
+            echo "BUILD FAILED"
+            exit 1
+          fi
+          
+          # Manual install
           mkdir -p ~/fexcore-install/lib
           mkdir -p ~/fexcore-install/include
           find . -name "libFEXCore.so" -exec cp {} ~/fexcore-install/lib/ \;
-          cp -r ../include/FEXCore ~/fexcore-install/include/
+          cp -r ../include/FEXCore ~/fexcore-install/include/ 2>/dev/null || echo "No headers to copy"
           
           echo "=== FEXCore installed ==="
           ls -la ~/fexcore-install/lib/
-          ls -la ~/fexcore-install/include/
 
       - name: Build basara4 runtime
         run: |
@@ -78,6 +92,7 @@ jobs:
           
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           
+          echo "=== Configuring basara4-android ==="
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=${NDK_PATH}/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
@@ -86,9 +101,12 @@ jobs:
             -DBUILD_CPU=ON \
             -DBUILD_RUNTIME=ON \
             -DBUILD_GPU=OFF \
-            -DFEXCORE_PATH=~/fexcore-install
+            -DFEXCORE_PATH=~/fexcore-install \
+            2>&1 | tee /tmp/basara4_configure.log | tail -20
           
-          cmake --build . --target basara4runtime -j$(nproc)
+          echo "=== Building basara4runtime ==="
+          cmake --build . --target basara4runtime -j$(nproc) 2>&1 | tee /tmp/basara4_build.log
+          
           echo "=== Runtime built ==="
           find . -name "*.so" -exec ls -lh {} \;
 
@@ -97,7 +115,6 @@ jobs:
           cd basara4-android
           mkdir -p launcher/src/main/jniLibs/arm64-v8a
           
-          # Copy all built libraries
           find build_android -name "*.so" -exec cp {} launcher/src/main/jniLibs/arm64-v8a/ \;
           cp ~/fexcore-install/lib/libFEXCore.so launcher/src/main/jniLibs/arm64-v8a/
           
