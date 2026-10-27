@@ -18,50 +18,32 @@ jobs:
           submodules: recursive
           path: basara4-android
 
-      - name: Show repository structure
-        run: |
-          echo "=== Repository ==="
-          ls -la basara4-android/
-          ls -la basara4-android/third_party/
-          echo "=== Submodule status ==="
-          cd basara4-android && git submodule status
-          echo "=== Done ==="
-
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build pkg-config python3
 
-      - name: Setup Android NDK (using setup-ndk action)
+      - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
           ndk-version: r26c
           local-cache: true
 
-      - name: Verify NDK installation
-        run: |
-          echo "NDK Path: ${{ steps.setup-ndk.outputs.ndk-path }}"
-          echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
-          ls -la "${{ steps.setup-ndk.outputs.ndk-path }}/"
-          ls -la "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/" | head -20
-
-      - name: Configure FEXCore
+      - name: Build FEXCore with verbose output
         run: |
           cd basara4-android/third_party/FEX
           mkdir -p build_arm64
           cd build_arm64
           
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
-          echo "Building FEXCore for ARM64..."
-          echo "NDK_PATH: $NDK_PATH"
           
+          # Configure with minimal options
           cmake .. \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=~/fexcore-install \
             -DCMAKE_C_COMPILER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
             -DCMAKE_CXX_COMPILER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++ \
-            -DCMAKE_TOOLCHAIN_FILE="" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-29 \
             -DENABLE_LTO=OFF \
@@ -73,25 +55,23 @@ jobs:
             -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
             -DENABLE_X86_HOST_DEBUG=ON \
             -DUSE_LINKER=lld \
-            -G Ninja
+            -G Ninja \
+            2>&1 | tee /tmp/fex_configure.log
           
-          echo "Configuration successful!"
-          ls -la
-
-      - name: Build FEXCore
-        run: |
-          cd basara4-android/third_party/FEX/build_arm64
-          cmake --build . --target FEXCore -j$(nproc)
-          echo "Build complete!"
+          echo "=== Configuring FEXCore done ==="
+          
+          # Build with verbose output
+          cmake --build . --target FEXCore -j$(nproc) --verbose 2>&1 | tee /tmp/fex_build.log
+          
+          echo "=== Build complete ==="
           
       - name: Install FEXCore
         run: |
           cd basara4-android/third_party/FEX/build_arm64
-          cmake --install .
-          echo "=== FEXCore installed ==="
-          ls -la ~/fexcore-install/
-          ls -la ~/fexcore-install/lib/ 2>/dev/null || echo "No lib dir"
-          ls -la ~/fexcore-install/include/ 2>/dev/null || echo "No include dir"
+          cmake --install . 2>&1
+          echo "=== Installed ==="
+          ls -la ~/fexcore-install/lib/ 2>/dev/null
+          ls -la ~/fexcore-install/include/ 2>/dev/null
 
       - name: Build basara4 runtime
         run: |
@@ -99,7 +79,6 @@ jobs:
           mkdir -p build_android
           cd build_android
           
-          echo "=== Configuring basara4-android ==="
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
