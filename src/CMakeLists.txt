@@ -18,9 +18,11 @@ if(ANDROID)
     )
     target_link_libraries(basara4runtime PRIVATE
         ${ANDROID_LIBS}
-        basara4cpu  # FEXCore backend
         libatrac9   # ATRAC9 audio decoder
     )
+    if(TARGET basara4cpu)
+        target_link_libraries(basara4runtime PRIVATE basara4cpu)
+    endif()
 else()
     target_link_libraries(basara4runtime PRIVATE
         dl pthread m libatrac9
