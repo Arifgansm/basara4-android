@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-libs:
-    name: Build Native Libraries (arm64)
+  build-runtime:
+    name: Build Runtime Only (no FEXCore)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
 
     steps:
       - name: Checkout basara4-android
@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config python3
+          sudo apt-get install -y cmake ninja-build
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
@@ -30,53 +30,13 @@ jobs:
           ndk-version: r26c
           local-cache: true
 
-      - name: Build FEXCore
-        run: |
-          cd basara4-android/third_party/FEX
-          mkdir -p build_arm64
-          cd build_arm64
-          
-          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
-          
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=~/fexcore-install \
-            -DCMAKE_C_COMPILER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
-            -DCMAKE_CXX_COMPILER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++ \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-29 \
-            -DENABLE_LTO=OFF \
-            -DBUILD_TESTING=OFF \
-            -DBUILD_THUNKS=OFF \
-            -DBUILD_FEXCONFIG=OFF \
-            -DBUILD_STEAM_SUPPORT=OFF \
-            -DENABLE_FEX_ALLOCATOR=OFF \
-            -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
-            -DENABLE_X86_HOST_DEBUG=ON \
-            -DUSE_LINKER=lld \
-            -G Ninja
-          
-          cmake --build . --target FEXCore -j$(nproc)
-          echo "FEXCore built successfully"
-          
-          # Manually install instead of cmake --install
-          mkdir -p ~/fexcore-install/lib
-          mkdir -p ~/fexcore-install/include
-          
-          # Copy library
-          find . -name "libFEXCore.so" -exec cp {} ~/fexcore-install/lib/ \;
-          ls -la ~/fexcore-install/lib/
-          
-          # Copy headers
-          cp -r ../include/FEXCore ~/fexcore-install/include/
-          ls -la ~/fexcore-install/include/
-          
-      - name: Build basara4 runtime
+      - name: Configure basara4-android (runtime only)
         run: |
           cd basara4-android
           mkdir -p build_android
           cd build_android
           
+          echo "=== Configuring basara4-android ==="
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
@@ -84,9 +44,13 @@ jobs:
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DBUILD_CPU=OFF \
             -DBUILD_RUNTIME=ON \
-            -DBUILD_GPU=OFF \
-            -DFEXCORE_PATH=~/fexcore-install
+            -DBUILD_GPU=OFF
           
+          echo "=== Configuration successful ==="
+
+      - name: Build basara4runtime
+        run: |
+          cd basara4-android/build_android
           cmake --build . --target basara4runtime -j$(nproc)
           echo "=== Runtime built ==="
           find . -name "*.so" -exec ls -lh {} \;
@@ -95,20 +59,14 @@ jobs:
         run: |
           cd basara4-android
           mkdir -p launcher/src/main/jniLibs/arm64-v8a
-          
-          # Copy FEXCore library
-          cp ~/fexcore-install/lib/libFEXCore.so launcher/src/main/jniLibs/arm64-v8a/ 2>/dev/null || echo "FEXCore lib not found"
-          
-          # Copy runtime library
           find build_android -name "*.so" -exec cp {} launcher/src/main/jniLibs/arm64-v8a/ \;
-          
           echo "=== Final libraries ==="
           ls -la launcher/src/main/jniLibs/arm64-v8a/
 
       - name: Upload native libraries
         uses: actions/upload-artifact@v4
         with:
-          name: basara4-native-libs
+          name: basara4-runtime-libs
           path: basara4-android/launcher/src/main/jniLibs/
           retention-days: 7
           if-no-files-found: error
@@ -116,8 +74,8 @@ jobs:
   build-apk:
     name: Build APK
     runs-on: ubuntu-latest
-    needs: build-libs
-    if: always() && needs.build-libs.result == 'success'
+    needs: build-runtime
+    if: always() && needs.build-runtime.result == 'success'
     
     steps:
       - name: Checkout
@@ -128,7 +86,7 @@ jobs:
       - name: Download native libraries
         uses: actions/download-artifact@v4
         with:
-          name: basara4-native-libs
+          name: basara4-runtime-libs
           path: basara4-android/launcher/src/main/jniLibs
 
       - name: Set up JDK 21
