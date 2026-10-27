@@ -69,16 +69,24 @@ jobs:
           # FEXCore is checked out as submodule via actions/checkout --recursive
           cd basara4-android/third_party/FEX
           
-          echo "Building FEXCore for ARM64..."
+          echo "Building FEXCore for ARM64 (Android)..."
           cmake -B _build_arm64 \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-29 \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DFEX_ENABLE_LTO=ON \
-            -DFEX_BUILD_DOC=OFF \
-            -DFEX_DISABLE_LOADER=ON \
-            -DBUILD_TESTS=OFF \
+            -DCMAKE_C_COMPILER=aarch64-linux-android-clang \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-android-clang++ \
+            -DUSE_LINKER=lld \
+            -DENABLE_LTO=True \
+            -DENABLE_ASSERTIONS=False \
+            -DBUILD_TESTING=False \
+            -DBUILD_THUNKS=False \
+            -DBUILD_FEXCONFIG=False \
+            -DBUILD_STEAM_SUPPORT=False \
+            -DENABLE_FEX_ALLOCATOR=False \
+            -DENABLE_JEMALLOC_GLIBC_ALLOC=False \
+            -DENABLE_X86_HOST_DEBUG=True \
             -DCMAKE_INSTALL_PREFIX=~/fexcore-install
           
           cmake --build _build_arm64 --target FEXCore -j$(nproc)
