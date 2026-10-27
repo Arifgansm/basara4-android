@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Basara4" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/basara_red</item>
+        <item name="colorPrimaryVariant">@color/basara_dark_red</item>
+        <item name="colorOnPrimary">@android:color/white</item>
+        <item name="colorSecondary">@color/basara_gold</item>
+        <item name="colorSecondaryVariant">@color/basara_gold</item>
+        <item name="colorOnSecondary">@color/basara_black</item>
+        <item name="android:colorBackground">@color/basara_black</item>
+        <item name="colorSurface">@color/basara_dark_gray</item>
+        <item name="colorOnSurface">@android:color/white</item>
+    </style>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="basara_red">#C0392B</color>
+    <color name="basara_dark_red">#8B0000</color>
+    <color name="basara_gold">#D4A843</color>
+    <color name="basara_black">#1A1A1A</color>
+    <color name="basara_dark_gray">#2D2D2D</color>
+    <color name="basara_light_gray">#3D3D3D</color>
+</resources>

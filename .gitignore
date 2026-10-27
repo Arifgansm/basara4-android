@@ -1,0 +1,48 @@
+# Basara 4 Android - Git Ignore
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java
+/target
+/classes
+/bin
+
+# Kotlin
+*.class
+*.jar
+*.war
+*.ear
+
+# Kotlin KAPT
+/generated
+/apkDebugInfo.json
+
+# Build variants
+/app/build/
+/app/outputs/
+
+# Gradle daemon
+.gradle/daemon/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Android Studio generated files
+*.apk
+*.aab
+*.apks
+
+# Temporary files
+*.tmp
+*.temp
+*.log
