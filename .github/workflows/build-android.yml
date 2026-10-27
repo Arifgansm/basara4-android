@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-runtime:
-    name: Build Runtime Only (no FEXCore)
+    name: Build Runtime Only
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -30,15 +30,17 @@ jobs:
           ndk-version: r26c
           local-cache: true
 
-      - name: Configure basara4-android (runtime only)
+      - name: Configure basara4-android
         run: |
           cd basara4-android
           mkdir -p build_android
           cd build_android
           
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          
           echo "=== Configuring basara4-android ==="
           cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE="${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE=${NDK_PATH}/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-29 \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -47,6 +49,7 @@ jobs:
             -DBUILD_GPU=OFF
           
           echo "=== Configuration successful ==="
+          cat CMakeCache.txt | grep -E "ANDROID|BUILD_|CMAKE_" | head -20
 
       - name: Build basara4runtime
         run: |
@@ -55,12 +58,16 @@ jobs:
           echo "=== Runtime built ==="
           find . -name "*.so" -exec ls -lh {} \;
 
-      - name: Combine libraries
+      - name: Prepare libraries for APK
         run: |
           cd basara4-android
           mkdir -p launcher/src/main/jniLibs/arm64-v8a
-          find build_android -name "*.so" -exec cp {} launcher/src/main/jniLibs/arm64-v8a/ \;
-          echo "=== Final libraries ==="
+          
+          # Copy runtime library
+          find build_android -name "libbasara4runtime.so" -exec cp {} launcher/src/main/jniLibs/arm64-v8a/ \;
+          
+          # Check what we have
+          echo "=== Libraries ==="
           ls -la launcher/src/main/jniLibs/arm64-v8a/
 
       - name: Upload native libraries
