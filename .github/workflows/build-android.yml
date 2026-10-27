@@ -30,10 +30,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build pkg-config
 
-      - name: Download Android NDK
+      - name: Download Android NDK (using cached)
+        uses: actions/cache@v4
+        id: ndk-cache
+        with:
+          path: ~/android-ndk-r26c
+          key: android-ndk-r26c
+
+      - name: Download Android NDK if not cached
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
         run: |
           echo "Downloading NDK..."
-          wget https://dl.google.com/android/repository/android-ndk-r26c-linux-x86_64.zip -O /tmp/ndk.zip
+          wget -q --tries=3 --timeout=30 https://dl.google.com/android/repository/android-ndk-r26c-linux-x86_64.zip -O /tmp/ndk.zip
           unzip -q /tmp/ndk.zip -d ~/
           echo "NDK downloaded to $HOME/android-ndk-r26c"
           ls -la $HOME/android-ndk-r26c/
@@ -42,8 +50,25 @@ jobs:
         run: |
           cd basara4-android/third_party/FEX
           echo "Building FEXCore..."
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=~/fexcore-install .
-          cmake --build build -j$(nproc)
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=~/fexcore-install \
+            -DCMAKE_C_COMPILER=aarch64-linux-android-clang \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-android-clang++ \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/android-ndk-r26c/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-29 \
+            -DENABLE_LTO=ON \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_THUNKS=OFF \
+            -DBUILD_FEXCONFIG=OFF \
+            -DBUILD_STEAM_SUPPORT=OFF \
+            -DENABLE_FEX_ALLOCATOR=OFF \
+            -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
+            -DENABLE_X86_HOST_DEBUG=ON \
+            -DUSE_LINKER=lld
+          
+          cmake --build build --target FEXCore -j$(nproc)
           cmake --install build
           echo "FEXCore built successfully"
           ls -la ~/fexcore-install/
