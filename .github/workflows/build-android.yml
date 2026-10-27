@@ -38,6 +38,7 @@ jobs:
       - name: Build FEXCore (shared library)
         run: |
           cd third_party/FEX
+          rm -rf build_arm64
           mkdir -p build_arm64
           cd build_arm64
           
@@ -59,7 +60,10 @@ jobs:
             -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
             -DUSE_LINKER=lld \
             -G Ninja \
-            2>&1 | tee /tmp/fex_configure.log | tail -20
+            2>&1 | tee /tmp/fex_configure.log | tail -30
+          
+          echo "=== Available targets ==="
+          cmake --build . --target help 2>&1 | grep -i "fex\|shared\|core" | head -20
           
           echo "=== Building FEXCore_shared ==="
           cmake --build . --target FEXCore_shared -j$(nproc) 2>&1 | tee /tmp/fex_build.log
@@ -77,17 +81,24 @@ jobs:
           mkdir -p ~/fexcore-install/lib
           mkdir -p ~/fexcore-install/include
           
+          echo "=== All .so files in FEX build ==="
+          find . -name "*.so" -exec ls -la {} \;
+          
           echo "=== Finding libFEXCore.so ==="
-          find . -name "libFEXCore.so" -exec ls -la {} \;
+          find . -name "libFEXCore*" -exec ls -la {} \;
           find . -name "libFEXCore.so" -exec cp {} ~/fexcore-install/lib/ \;
           
           cp -r ../include/FEXCore ~/fexcore-install/include/ 2>/dev/null || true
           
           echo "=== FEXCore installed ==="
           ls -la ~/fexcore-install/lib/
+          echo "=== Returning to repo root ==="
+          cd /home/runner/work/basara4-android/basara4-android
+          pwd
 
       - name: Build basara4 runtime
         run: |
+          cd /home/runner/work/basara4-android/basara4-android
           mkdir -p build_android
           cd build_android
           
@@ -105,19 +116,28 @@ jobs:
             -DFEXCORE_PATH=~/fexcore-install \
             2>&1 | tee /tmp/basara4_configure.log | tail -20
           
+          echo "=== Available targets ==="
+          cmake --build . --target help 2>&1 | head -30
+          
           echo "=== Building basara4runtime ==="
           cmake --build . --target basara4runtime -j$(nproc) 2>&1 | tee /tmp/basara4_build.log
+          
+          build_exit=$?
+          echo "Build exit code: $build_exit"
           
           echo "=== Runtime built ==="
           find . -name "*.so" -exec ls -lh {} \;
           find . -name "*.a" -exec ls -lh {} \;
           
           echo "=== All files in build_android ==="
-          find . -type f -name "*.so" -o -name "*.a" | head -30
+          find . -type f \( -name "*.so" -o -name "*.a" \) 2>/dev/null | head -30
           
-          # Also check parent directory
           echo "=== Checking parent directory for libs ==="
           find .. -maxdepth 3 -name "*.so" -type f 2>/dev/null | head -20
+          
+          echo "=== Returning to repo root ==="
+          cd /home/runner/work/basara4-android/basara4-android
+          pwd
 
       - name: Prepare libraries for APK
         run: |
