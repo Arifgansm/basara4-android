@@ -9,7 +9,7 @@ jobs:
   build-libs:
     name: Build Native Libraries (arm64)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout basara4-android
@@ -18,33 +18,83 @@ jobs:
           submodules: recursive
           path: basara4-android
 
+      - name: Show repository contents
+        run: |
+          echo "=== Repository Structure ==="
+          find basara4-android -type f -name "*.cmake" -o -name "CMakeLists.txt" | head -20
+          ls -la basara4-android/third_party/
+          ls -la basara4-android/third_party/FEX/ 2>/dev/null | head -10 || echo "FEX dir empty or missing"
+          echo "=== Submodule status ==="
+          cd basara4-android
+          git submodule status
+          echo "=== Done ==="
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build pkg-config unzip
+          sudo apt-get install -y cmake ninja-build pkg-config python3
 
       - name: Setup Android NDK
         uses: android-actions/setup-android@v3
         with:
           packages: ndk;26.0.10792818
 
-      - name: Download pre-built FEXCore
+      - name: Verify NDK and compilers
         run: |
-          echo "Downloading FEXCore-2610 from Nightlies..."
-          curl -L -o FEXCore-2610.zip \
-            https://github.com/The412Banner/Nightlies/releases/download/FEXCore-2610/FEXCore-2610.wcp
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          ls -la $ANDROID_HOME/ndk/
+          NDK_PATH=$ANDROID_HOME/ndk/26.0.10792818
+          echo "NDK tools dir:"
+          ls -la $NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/ | grep -E "aarch64|clang"
+          echo "cmake version:"
+          cmake --version
+          which aarch64-linux-android-clang
+
+      - name: Configure FEXCore with verbose output
+        run: |
+          cd basara4-android/third_party/FEX
+          mkdir -p build_arm64
+          cd build_arm64
           
-          # It's a zip file
-          unzip FEXCore-2610.zip -d fexcore_extract
-          echo "Extracted files:"
-          find fexcore_extract -type f -ls
+          echo "=== Configuring FEXCore ==="
+          echo "CMake command:"
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=~/fexcore-install \
+            -DCMAKE_C_COMPILER=aarch64-linux-android-clang \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-android-clang++ \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/26.0.10792818/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-29 \
+            -DENABLE_LTO=OFF \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_THUNKS=OFF \
+            -DBUILD_FEXCONFIG=OFF \
+            -DBUILD_STEAM_SUPPORT=OFF \
+            -DENABLE_FEX_ALLOCATOR=OFF \
+            -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
+            -DENABLE_X86_HOST_DEBUG=ON \
+            -DUSE_LINKER=lld \
+            -G Ninja \
+            --debug-output 2>&1 | tail -50
           
-          # Copy to jniLibs
-          mkdir -p basara4-android/launcher/src/main/jniLibs/arm64-v8a
-          find fexcore_extract -name "*.so" -exec cp {} basara4-android/launcher/src/main/jniLibs/arm64-v8a/ \;
+          echo "=== CMake output saved ==="
+
+      - name: Build FEXCore
+        run: |
+          cd basara4-android/third_party/FEX/build_arm64
+          echo "=== Building FEXCore ==="
+          cmake --build . --target FEXCore -j$(nproc) 2>&1
+          echo "=== Build complete ==="
           
-          echo "FEXCore libraries ready"
-          ls -la basara4-android/launcher/src/main/jniLibs/arm64-v8a/
+      - name: Install FEXCore
+        run: |
+          cd basara4-android/third_party/FEX/build_arm64
+          cmake --install . 2>&1
+          echo "=== Installed to ~/fexcore-install ==="
+          ls -la ~/fexcore-install/
+          ls -la ~/fexcore-install/lib/ 2>/dev/null || echo "No lib dir"
+          ls -la ~/fexcore-install/include/ 2>/dev/null || echo "No include dir"
 
       - name: Build basara4 runtime
         run: |
@@ -52,25 +102,28 @@ jobs:
           mkdir -p build_android
           cd build_android
           
+          echo "=== Configuring basara4-android ==="
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/26.0.10792818/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-29 \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DBUILD_RUNTIME=ON \
             -DBUILD_CPU=OFF \
-            -DBUILD_GPU=OFF
+            -DBUILD_RUNTIME=ON \
+            -DBUILD_GPU=OFF \
+            -DFEXCORE_PATH=~/fexcore-install
           
           cmake --build . --target basara4runtime -j$(nproc)
           
-          echo "Building basara4runtime..."
-          find . -name "libbasara4runtime.so" -exec ls -lh {} \;
+          echo "=== Runtime built ==="
+          find . -name "*.so" -exec ls -lh {} \;
 
       - name: Combine libraries
         run: |
           cd basara4-android
-          cp build_android/libbasara4runtime.so launcher/src/main/jniLibs/arm64-v8a/
-          echo "Final jniLibs contents:"
+          mkdir -p launcher/src/main/jniLibs/arm64-v8a
+          find build_android -name "*.so" -exec cp {} launcher/src/main/jniLibs/arm64-v8a/ \;
+          echo "Final libraries:"
           ls -la launcher/src/main/jniLibs/arm64-v8a/
 
       - name: Upload native libraries
@@ -79,6 +132,7 @@ jobs:
           name: basara4-native-libs
           path: basara4-android/launcher/src/main/jniLibs/
           retention-days: 7
+          if-no-files-found: error
 
   build-apk:
     name: Build APK
