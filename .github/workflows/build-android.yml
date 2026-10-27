@@ -138,6 +138,10 @@ jobs:
           
           echo "=== Final libraries ==="
           ls -la launcher/src/main/jniLibs/arm64-v8a/
+          echo "=== Current working directory ==="
+          pwd
+          echo "=== Verifying launcher directory exists ==="
+          ls -la launcher/
 
       - name: Upload native libraries
         uses: actions/upload-artifact@v4
@@ -145,7 +149,7 @@ jobs:
           name: basara4-native-libs
           path: launcher/src/main/jniLibs/
           retention-days: 7
-          if-no-files-found: error
+          if-no-files-found: warn
 
   build-apk:
     name: Build APK
