@@ -139,7 +139,7 @@ jobs:
     name: Build APK
     runs-on: ubuntu-latest
     needs: build-libs
-    if: github.event.inputs.build_type != 'libs-only'
+    if: always() && needs.build-libs.result == 'success'
     
     steps:
       - name: Checkout
