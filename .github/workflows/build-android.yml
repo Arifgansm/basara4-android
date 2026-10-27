@@ -75,10 +75,18 @@ jobs:
             exit 1
           fi
           
-          # Manual install
+          # Manual install - find the actual library
           mkdir -p ~/fexcore-install/lib
           mkdir -p ~/fexcore-install/include
+          
+          # Find libFEXCore.so - it might be in different locations
+          find . -name "libFEXCore.so" -exec ls -la {} \;
           find . -name "libFEXCore.so" -exec cp {} ~/fexcore-install/lib/ \;
+          
+          # Also check for any FEXCore library
+          ls -la ~/fexcore-install/lib/
+          
+          # Copy headers
           cp -r ../include/FEXCore ~/fexcore-install/include/ 2>/dev/null || echo "No headers to copy"
           
           echo "=== FEXCore installed ==="
@@ -115,8 +123,21 @@ jobs:
           cd basara4-android
           mkdir -p launcher/src/main/jniLibs/arm64-v8a
           
+          echo "=== Checking build_android for libraries ==="
+          find build_android -name "*.so" -exec ls -la {} \;
+          
+          echo "=== Checking fexcore-install for libraries ==="
+          ls -la ~/fexcore-install/lib/ 2>/dev/null || echo "fexcore-install/lib not found"
+          
           find build_android -name "*.so" -exec cp {} launcher/src/main/jniLibs/arm64-v8a/ \;
-          cp ~/fexcore-install/lib/libFEXCore.so launcher/src/main/jniLibs/arm64-v8a/
+          
+          if [ -f ~/fexcore-install/lib/libFEXCore.so ]; then
+            cp ~/fexcore-install/lib/libFEXCore.so launcher/src/main/jniLibs/arm64-v8a/
+            echo "Copied FEXCore"
+          else
+            echo "WARNING: libFEXCore.so not found in ~/fexcore-install/lib/"
+            ls -la ~/fexcore-install/
+          fi
           
           echo "=== Final libraries ==="
           ls -la launcher/src/main/jniLibs/arm64-v8a/
