@@ -1,0 +1,33 @@
+name: Test GitHub Actions
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Simple Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Test step 1
+        run: echo "Hello from GitHub Actions!"
+      
+      - name: Test step 2
+        run: |
+          echo "Testing network..."
+          curl -I https://github.com
+          echo "Network OK"
+      
+      - name: Test step 3
+        run: |
+          echo "Creating test file"
+          echo "test content" > test.txt
+          cat test.txt
+      
+      - name: Final check
+        run: echo "All tests passed!"
