@@ -34,47 +34,53 @@ jobs:
           sudo apt-get install -y cmake ninja-build clang
 
       - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
+        uses: android-actions/setup-android@v2
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
-          local-cache: true
+          cmake-version: ${{ env.CMAKE_VERSION }}
 
       - name: Cache FEXCore build
         uses: actions/cache@v4
         with:
-          path: third_party/FEX/build_arm64
+          path: third_party/FEX/_build_android_arm64
           key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}
 
       - name: Build FEXCore (shared library)
         run: |
-          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          NDK_PATH="${ANDROID_NDK_HOME}"
+          CLANG="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          CLANGXX="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++"
+          SYSROOT="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          NDK_LIBS="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/17/lib/linux/aarch64"
+          
           cd third_party/FEX
           
-          rm -rf build_arm64
-          mkdir -p build_arm64
-          cd build_arm64
+          rm -rf _build_android_arm64
+          mkdir -p _build_android_arm64
+          cd _build_android_arm64
           
           echo "=== Configuring FEXCore ==="
           cmake .. \
+            -DCMAKE_C_COMPILER=${CLANG} \
+            -DCMAKE_CXX_COMPILER=${CLANGXX} \
+            -DCMAKE_ASM_COMPILER=${CLANG} \
+            -DCMAKE_SYSROOT=${SYSROOT} \
+            -DCMAKE_SYSTEM_NAME=Android \
+            -DCMAKE_SYSTEM_VERSION=29 \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang \
-            -DCMAKE_CXX_COMPILER=${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++ \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-29 \
-            -DENABLE_LTO=OFF \
-            -DBUILD_TESTING=OFF \
-            -DBUILD_THUNKS=OFF \
-            -DBUILD_FEXCONFIG=OFF \
-            -DBUILD_STEAM_SUPPORT=OFF \
             -DENABLE_FEX_ALLOCATOR=OFF \
-            -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
-            -DUSE_LINKER=lld \
+            -DBUILD_FEXCONFIG=OFF \
+            -DBUILD_FEX_LINUX_TESTS=OFF \
+            -DBUILD_TESTING=OFF \
+            -DCMAKE_EXE_LINKER_FLAGS="-L${NDK_LIBS} -lunwind -Wl,-rpath,${NDK_LIBS}" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-L${NDK_LIBS} -lunwind -Wl,-rpath,${NDK_LIBS}" \
             -G Ninja \
             2>&1 | tee /tmp/fex_configure.log | tail -30
           
-          echo "=== Building FEXCore_shared ==="
-          cmake --build . --target FEXCore_shared -j$(nproc) 2>&1 | tee /tmp/fex_build.log
+          echo "=== Building FEXCore ==="
+          cmake --build . --target FEXCore -j$(nproc) 2>&1 | tee /tmp/fex_build.log
           
           build_exit=$?
           echo "Build exit code: $build_exit"
@@ -85,7 +91,7 @@ jobs:
             exit 1
           fi
           
-          # Install FEXCore
+          # Find and install FEXCore library
           mkdir -p ~/fexcore-install/lib
           mkdir -p ~/fexcore-install/include
           
@@ -93,17 +99,22 @@ jobs:
           find . -name "*.so" -exec ls -la {} \;
           
           echo "=== Finding libFEXCore.so ==="
-          find . -name "libFEXCore*" -exec ls -la {} \;
           find . -name "libFEXCore.so" -exec cp {} ~/fexcore-install/lib/ \;
+          find . -name "libFEXCore.a" -exec cp {} ~/fexcore-install/lib/ \;
           
           cp -r ../include/FEXCore ~/fexcore-install/include/ 2>/dev/null || true
           
           echo "=== FEXCore installed ==="
           ls -la ~/fexcore-install/lib/
+          ls -la ~/fexcore-install/include/
 
       - name: Build basara4 runtime
         run: |
-          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          NDK_PATH="${ANDROID_NDK_HOME}"
+          CLANG="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+          CLANGXX="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++"
+          SYSROOT="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          
           cd basara4_android
           
           rm -rf build_android
@@ -112,15 +123,21 @@ jobs:
           
           echo "=== Configuring basara4-android ==="
           cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=${NDK_PATH}/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-29 \
+            -DCMAKE_C_COMPILER=${CLANG} \
+            -DCMAKE_CXX_COMPILER=${CLANGXX} \
+            -DCMAKE_ASM_COMPILER=${CLANG} \
+            -DCMAKE_SYSROOT=${SYSROOT} \
+            -DCMAKE_SYSTEM_NAME=Android \
+            -DCMAKE_SYSTEM_VERSION=29 \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DBUILD_CPU=ON \
             -DBUILD_RUNTIME=ON \
             -DBUILD_GPU=OFF \
             -DFEXCORE_PATH=~/fexcore-install \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -G Ninja \
             2>&1 | tee /tmp/basara4_configure.log | tail -30
           
           echo "=== Building basara4runtime ==="
