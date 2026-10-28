@@ -33,11 +33,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build clang
 
-      - name: Setup Android NDK
-        uses: android-actions/setup-android@v2
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Set up Android NDK r26c
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
         with:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
-          cmake-version: ${{ env.CMAKE_VERSION }}
+          local-cache: true
 
       - name: Cache FEXCore build
         uses: actions/cache@v4
@@ -47,7 +59,7 @@ jobs:
 
       - name: Build FEXCore (shared library)
         run: |
-          NDK_PATH="${ANDROID_NDK_HOME}"
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           CLANG="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
           CLANGXX="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++"
           SYSROOT="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
@@ -110,7 +122,7 @@ jobs:
 
       - name: Build basara4 runtime
         run: |
-          NDK_PATH="${ANDROID_NDK_HOME}"
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           CLANG="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
           CLANGXX="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++"
           SYSROOT="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
