@@ -54,11 +54,19 @@ jobs:
           ndk-version: ${{ env.ANDROID_NDK_VERSION }}
           local-cache: true
 
+      - name: Diagnose NDK
+        run: |
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          echo "NDK_PATH=$NDK_PATH"
+          ls -la "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/" | head -30
+          ls -la "$NDK_PATH/build/cmake/android.toolchain.cmake"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+
       - name: Cache FEXCore build
         uses: actions/cache@v4
         with:
           path: third_party/FEX/_build_android_arm64
-          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}
+          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v2
 
       - name: Build FEXCore (shared library)
         run: |
