@@ -4,12 +4,10 @@ on:
   push:
     branches: [main, master]
     paths:
-      - 'basara4_android/**'
+      - '**'
       - '.github/workflows/build-android.yml'
   pull_request:
     branches: [main, master]
-    paths:
-      - 'basara4_android/**'
   workflow_dispatch:
 
 jobs:
@@ -26,6 +24,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Verify submodules
+        run: |
+          git submodule status --recursive
+          git submodule update --init --recursive
+          ls -la third_party/
 
       - name: Install dependencies
         run: |
@@ -53,7 +57,7 @@ jobs:
       - name: Cache FEXCore build
         uses: actions/cache@v4
         with:
-          path: basara4_android/third_party/FEX/_build_android_arm64
+          path: third_party/FEX/_build_android_arm64
           key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}
 
       - name: Build FEXCore (shared library)
@@ -64,7 +68,7 @@ jobs:
           SYSROOT="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           NDK_LIBS="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/17/lib/linux/aarch64"
           
-          cd basara4_android/third_party/FEX
+          cd third_party/FEX
           
           rm -rf _build_android_arm64
           mkdir -p _build_android_arm64
@@ -126,8 +130,6 @@ jobs:
           CLANGXX="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang++"
           SYSROOT="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           
-          cd basara4_android
-          
           rm -rf build_android
           mkdir -p build_android
           cd build_android
@@ -167,8 +169,6 @@ jobs:
 
       - name: Prepare libraries for APK
         run: |
-          cd basara4_android
-          
           mkdir -p launcher/src/main/jniLibs/arm64-v8a
           
           echo "=== Current directory ==="
@@ -200,7 +200,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: basara4-native-libs
-          path: basara4_android/launcher/src/main/jniLibs/
+          path: launcher/src/main/jniLibs/
           retention-days: 7
           if-no-files-found: error
 
@@ -218,7 +218,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: basara4-native-libs
-          path: basara4_android/launcher/src/main/jniLibs
+          path: launcher/src/main/jniLibs
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -227,7 +227,7 @@ jobs:
           java-version: '17'
 
       - name: Build APK
-        working-directory: basara4_android
+        working-directory: .
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug 2>&1 | tee /tmp/apk_build.log
@@ -235,7 +235,7 @@ jobs:
           tail -20 /tmp/apk_build.log
 
       - name: Verify APK
-        working-directory: basara4_android
+        working-directory: .
         run: |
           APK=$(find launcher/app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
           echo "APK: $APK"
@@ -249,6 +249,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: basara4-android-debug
-          path: basara4_android/launcher/app/build/outputs/apk/debug/*.apk
+          path: launcher/app/build/outputs/apk/debug/*.apk
           retention-days: 7
           if-no-files-found: error
