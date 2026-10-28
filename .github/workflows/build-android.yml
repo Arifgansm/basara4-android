@@ -2,14 +2,25 @@ name: Basara 4 Android Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
+    paths:
+      - 'basara4_android/**'
+      - '.github/workflows/build-android.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'basara4_android/**'
   workflow_dispatch:
 
 jobs:
   build-libs:
     name: Build Native Libraries (arm64)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
+
+    env:
+      ANDROID_NDK_VERSION: r26c
+      CMAKE_VERSION: 3.22.1
 
     steps:
       - name: Checkout basara4-android
@@ -21,13 +32,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build clang
-          
+
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r26c
+          ndk-version: ${{ env.ANDROID_NDK_VERSION }}
           local-cache: true
+
+      - name: Cache FEXCore build
+        uses: actions/cache@v4
+        with:
+          path: third_party/FEX/build_arm64
+          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}
 
       - name: Build FEXCore (shared library)
         run: |
@@ -83,23 +100,15 @@ jobs:
           
           echo "=== FEXCore installed ==="
           ls -la ~/fexcore-install/lib/
-          
-          echo "=== Returning to repo root ==="
-          cd /home/runner/work/basara4-android/basara4-android
-          pwd
 
       - name: Build basara4 runtime
         run: |
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
-          cd /home/runner/work/basara4-android/basara4-android
+          cd basara4_android
           
           rm -rf build_android
           mkdir -p build_android
           cd build_android
-          
-          echo "=== CMAKE_MODULE_PATH workaround ==="
-          # Add FEX CMake modules to path
-          export CMAKE_MODULE_PATH="${CMAKE_MODULE_PATH}:${PWD}/../third_party/FEX/Data/CMake"
           
           echo "=== Configuring basara4-android ==="
           cmake .. \
@@ -114,9 +123,6 @@ jobs:
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
             2>&1 | tee /tmp/basara4_configure.log | tail -30
           
-          echo "=== Available targets ==="
-          cmake --build . --target help 2>&1 | head -40
-          
           echo "=== Building basara4runtime ==="
           cmake --build . --target basara4runtime -j$(nproc) 2>&1 | tee /tmp/basara4_build.log
           
@@ -130,14 +136,10 @@ jobs:
           
           echo "=== All .so files in build tree ==="
           find . -name "*.so" -type f 2>/dev/null
-          
-          echo "=== Returning to repo root ==="
-          cd /home/runner/work/basara4-android/basara4-android
-          pwd
 
       - name: Prepare libraries for APK
         run: |
-          cd /home/runner/work/basara4-android/basara4-android
+          cd basara4_android
           
           mkdir -p launcher/src/main/jniLibs/arm64-v8a
           
@@ -170,7 +172,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: basara4-native-libs
-          path: launcher/src/main/jniLibs/
+          path: basara4_android/launcher/src/main/jniLibs/
           retention-days: 7
           if-no-files-found: error
 
@@ -179,7 +181,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-libs
     if: always() && needs.build-libs.result == 'success'
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -188,25 +190,37 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: basara4-native-libs
-          path: launcher/src/main/jniLibs
+          path: basara4_android/launcher/src/main/jniLibs
 
-      - name: Set up JDK 21
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '21'
+          java-version: '17'
 
       - name: Build APK
-        working-directory: .
+        working-directory: basara4_android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug 2>&1 | tee /tmp/apk_build.log
+          echo "APK build exit code: $?"
+          tail -20 /tmp/apk_build.log
+
+      - name: Verify APK
+        working-directory: basara4_android
+        run: |
+          APK=$(find launcher/app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | head -1)
+          echo "APK: $APK"
+          if [ -z "$APK" ]; then
+            find launcher -name "*.apk" -exec echo "Found: {}" \;
+            exit 1
+          fi
+          unzip -l "$APK" | grep -E "\.so$|assets|classes" | head -20
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: basara4-android-debug
-          path: |
-            launcher/build/outputs/apk/debug/*.apk
+          path: basara4_android/launcher/app/build/outputs/apk/debug/*.apk
           retention-days: 7
           if-no-files-found: error
