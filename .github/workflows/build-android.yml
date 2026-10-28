@@ -20,7 +20,6 @@ jobs:
 
     env:
       ANDROID_NDK_VERSION: r26c
-      CMAKE_VERSION: 3.22.1
 
     steps:
       - name: Checkout basara4-android
@@ -54,7 +53,7 @@ jobs:
       - name: Cache FEXCore build
         uses: actions/cache@v4
         with:
-          path: third_party/FEX/_build_android_arm64
+          path: basara4_android/third_party/FEX/_build_android_arm64
           key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}
 
       - name: Build FEXCore (shared library)
@@ -65,7 +64,7 @@ jobs:
           SYSROOT="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           NDK_LIBS="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/17/lib/linux/aarch64"
           
-          cd third_party/FEX
+          cd basara4_android/third_party/FEX
           
           rm -rf _build_android_arm64
           mkdir -p _build_android_arm64
