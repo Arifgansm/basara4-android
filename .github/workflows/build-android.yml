@@ -42,11 +42,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools'
-
       - name: Set up Android NDK r26c
         uses: nttld/setup-ndk@v1
         id: setup-ndk
@@ -58,15 +53,18 @@ jobs:
         run: |
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           echo "NDK_PATH=$NDK_PATH"
-          ls -la "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/" | head -30
+          echo "=== All compilers in NDK ==="
+          ls -la "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/" | grep -E "clang"
+          echo "=== Toolchain file ==="
           ls -la "$NDK_PATH/build/cmake/android.toolchain.cmake"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          echo "=== NDK version ==="
+          cat "$NDK_PATH/source.properties" 2>/dev/null | grep "Pkg.Revision" || echo "No source.properties"
 
       - name: Cache FEXCore build
         uses: actions/cache@v4
         with:
           path: third_party/FEX/_build_android_arm64
-          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v2
+          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v3
 
       - name: Build FEXCore (shared library)
         run: |
@@ -89,14 +87,14 @@ jobs:
             -DBUILD_FEX_LINUX_TESTS=OFF \
             -DBUILD_TESTING=OFF \
             -G Ninja \
-            2>&1 | tee /tmp/fex_configure.log | tail -30
+            2>&1 | tee /tmp/fex_configure.log | tail -50
           
           echo "=== Building FEXCore ==="
           cmake --build . --target FEXCore -j$(nproc) 2>&1 | tee /tmp/fex_build.log
           
           build_exit=$?
           echo "Build exit code: $build_exit"
-          tail -50 /tmp/fex_build.log
+          tail -100 /tmp/fex_build.log
           
           if [ $build_exit -ne 0 ]; then
             echo "FEXCore BUILD FAILED"
@@ -140,14 +138,14 @@ jobs:
             -DFEXCORE_PATH=~/fexcore-install \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
             -G Ninja \
-            2>&1 | tee /tmp/basara4_configure.log | tail -30
+            2>&1 | tee /tmp/basara4_configure.log | tail -50
           
           echo "=== Building basara4runtime ==="
           cmake --build . --target basara4runtime -j$(nproc) 2>&1 | tee /tmp/basara4_build.log
           
           build_exit=$?
           echo "Build exit code: $build_exit"
-          tail -50 /tmp/basara4_build.log
+          tail -100 /tmp/basara4_build.log
           
           echo "=== Runtime built ==="
           find . -name "*.so" -exec ls -lh {} \;
