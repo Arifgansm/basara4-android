@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: third_party/FEX/_build_android_arm64
-          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v6
+          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v7
 
       - name: Build FEXCore (shared library)
         run: |
