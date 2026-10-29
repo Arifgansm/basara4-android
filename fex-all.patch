@@ -12,7 +12,7 @@ index 2d2dfdebe..c9a599c2b 100644
      " FEX only supports Linux and Windows."
      " If you believe this is in error, file an issue.")
 diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
-index c5844fe10..8547bf7f0 100644
+index c5844fe10..f012477d6 100644
 --- a/FEXCore/include/FEXCore/Utils/SHMStats.h
 +++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
 @@ -1,4 +1,39 @@
@@ -47,9 +47,9 @@ index c5844fe10..8547bf7f0 100644
 +  }
 +  T operator=(T desired) noexcept { store(desired); return desired; }
 +};
-+#define std_atomic_ref fex_atomic_ref
++#define FEXSTD_AREF fex_atomic_ref
 +#else
-+#define std_atomic_ref std_atomic_ref
++#define FEXSTD_AREF FEXSTD_AREF
 +#endif
 +#endif // FEX_ATOMIC_REF_H
  #pragma once
@@ -60,7 +60,7 @@ index c5844fe10..8547bf7f0 100644
      if (Stat) {
        const auto Duration = GetCycleCounter() - Begin + FlatOffset;
 -      auto ref = std::atomic_ref<T>(*Stat);
-+      auto ref = std_atomic_ref<T>(*Stat);
++      auto ref = FEXSTD_AREF<T>(*Stat);
        ref.fetch_add(Duration, std::memory_order_relaxed);
      }
    }
@@ -159,7 +159,7 @@ index af59a6efb..869f9b0df 100644
  }
  
 diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-index bf1bd2bbc..fc8445329 100644
+index bf1bd2bbc..ae6245920 100644
 --- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
 +++ b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
 @@ -1,4 +1,39 @@
@@ -194,9 +194,9 @@ index bf1bd2bbc..fc8445329 100644
 +  }
 +  T operator=(T desired) noexcept { store(desired); return desired; }
 +};
-+#define std_atomic_ref fex_atomic_ref
++#define FEXSTD_AREF fex_atomic_ref
 +#else
-+#define std_atomic_ref std_atomic_ref
++#define FEXSTD_AREF FEXSTD_AREF
 +#endif
 +#endif // FEX_ATOMIC_REF_H
  #pragma once
@@ -207,7 +207,7 @@ index bf1bd2bbc..fc8445329 100644
  
      // Still couldn't get it. Start waiting.
 -    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
++    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
  
      uint32_t Expected {};
      uint32_t Desired {};
@@ -216,7 +216,7 @@ index bf1bd2bbc..fc8445329 100644
      }
  
 -    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
++    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
  
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
@@ -225,7 +225,7 @@ index bf1bd2bbc..fc8445329 100644
  
    void unlock() {
 -    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
++    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
  
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
@@ -234,7 +234,7 @@ index bf1bd2bbc..fc8445329 100644
  
    void unlock_shared() {
 -    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
++    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
  
      uint32_t Desired {};
  #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED
@@ -243,7 +243,7 @@ index bf1bd2bbc..fc8445329 100644
  
    bool try_lock() {
 -    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
++    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
  
      uint32_t Expected = 0;
  
@@ -252,7 +252,7 @@ index bf1bd2bbc..fc8445329 100644
    // Can race with other threads trying to lock shared!
    bool try_lock_shared() {
 -    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
++    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
  
      // Exclusively owned or has a list of waiting owners. Can't pass.
@@ -261,7 +261,7 @@ index bf1bd2bbc..fc8445329 100644
      const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
  
 -    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
++    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
  
      while ((Now - Begin) < Duration) {
@@ -270,7 +270,7 @@ index bf1bd2bbc..fc8445329 100644
      const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
  
 -    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
++    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
  
