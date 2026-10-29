@@ -62,6 +62,15 @@ jobs:
           echo "=== Toolchain file ==="
           ls -la "$NDK_PATH/build/cmake/android.toolchain.cmake"
 
+      - name: Apply FEX Android patch
+        run: |
+          echo "=== Before patch ==="
+          sed -n '60,70p' third_party/FEX/CMakeLists.txt
+          echo "=== Applying patch ==="
+          git -C third_party/FEX apply ../fex-android-support.patch
+          echo "=== After patch ==="
+          sed -n '60,70p' third_party/FEX/CMakeLists.txt
+
       - name: Cache FEXCore build
         uses: actions/cache@v4
         with:
