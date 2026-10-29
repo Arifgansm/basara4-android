@@ -110,8 +110,8 @@ jobs:
           echo "=== All errors in configure ==="
           grep -E "Error|error|FATAL" /tmp/fex_configure.log || true
 
-          echo "=== Building FEXCore ==="
-          cmake --build . --target FEXCore -j$(nproc) 2>&1 | tee /tmp/fex_build.log
+          echo "=== Building FEXCore (shared library) ==="
+          cmake --build . --target FEXCore_shared -j$(nproc) 2>&1 | tee /tmp/fex_build.log
 
           build_exit=$?
           echo "Build exit code: $build_exit"
