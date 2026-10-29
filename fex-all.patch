@@ -22,6 +22,23 @@ index 2d2dfdebe..344980dd1 100644
  
  if (NOT CMAKE_CROSSCOMPILING AND NOT BUILD_STEAM_SUPPORT)
    find_package(xxhash MODULE QUIET)
+diff --git a/FEXCore/Source/CMakeLists.txt b/FEXCore/Source/CMakeLists.txt
+index dd8e4aa24..6171bbc67 100644
+--- a/FEXCore/Source/CMakeLists.txt
++++ b/FEXCore/Source/CMakeLists.txt
+@@ -305,10 +305,11 @@ endif()
+ # Meta-library to link jemalloc libraries enabled in the build configuration.
+ # Only needed for targets that run emulation. For others, use JemallocDummy.
+ add_library(JemallocLibs STATIC Utils/AllocatorHooks.cpp)
++# Always add include path for JemallocLibs (needed for PrctlUtils.h)
++target_include_directories(JemallocLibs PRIVATE "${PROJECT_SOURCE_DIR}/include/")
+ if (ENABLE_FEX_ALLOCATOR)
+   target_compile_definitions(JemallocLibs PRIVATE ENABLE_FEX_ALLOCATOR=1)
+   target_link_libraries(JemallocLibs PUBLIC rpmalloc)
+-  target_include_directories(JemallocLibs PRIVATE "${PROJECT_SOURCE_DIR}/include/")
+ endif()
+ if (ENABLE_JEMALLOC_GLIBC_ALLOC)
+   set_source_files_properties(Interface/HLE/Thunks/Thunks.cpp PROPERTIES COMPILE_DEFINITIONS ENABLE_JEMALLOC_GLIBC=1)
 diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 index 2a7e575d0..179d1cea7 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
