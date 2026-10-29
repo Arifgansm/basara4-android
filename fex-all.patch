@@ -419,6 +419,21 @@ index 01e5bb22e..74eec2ada 100644
      if ((STPInst & LDSTP_MASK) == STP_INST && DMBInst == DMB) {
        // Code that was backpatched is what was expected for ARMv8.0-a LDAXP.
        return 0;
+diff --git a/FEXCore/Source/Utils/FileUtils.cpp b/FEXCore/Source/Utils/FileUtils.cpp
+index d3e62cacd..80f1ccd81 100644
+--- a/FEXCore/Source/Utils/FileUtils.cpp
++++ b/FEXCore/Source/Utils/FileUtils.cpp
+@@ -9,6 +9,10 @@
+ #include <dirent.h>
+ #include <fcntl.h>
+ #include <unistd.h>
++#ifdef __ANDROID__
++// Android NDK doesn't have getdents64, fall back to getdents
++#define getdents64 getdents
++#endif
+ #else
+ #include <windows.h>
+ #include <winnt.h>
 diff --git a/FEXCore/Source/Utils/atomic_bitset.h b/FEXCore/Source/Utils/atomic_bitset.h
 index b4add119c..0c844320c 100644
 --- a/FEXCore/Source/Utils/atomic_bitset.h
