@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 2d2dfdebe..7372ddde2 100644
+index 2d2dfdebe..344980dd1 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -61,7 +61,7 @@ if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -11,22 +11,22 @@ index 2d2dfdebe..7372ddde2 100644
    message(FATAL_ERROR "Unsupported system type ${CMAKE_SYSTEM_NAME}."
      " FEX only supports Linux and Windows."
      " If you believe this is in error, file an issue.")
-@@ -404,6 +404,10 @@ endif()
+@@ -403,7 +403,9 @@ endif()
+ 
  find_package(Python 3.9 REQUIRED COMPONENTS Interpreter)
  
- set(BUILD_SHARED_LIBS OFF)
-+# Override for Android shared library builds
-+if(ANDROID)
-+    set(BUILD_SHARED_LIBS ON)
+-set(BUILD_SHARED_LIBS OFF)
++if(NOT DEFINED BUILD_SHARED_LIBS)
++    set(BUILD_SHARED_LIBS OFF)
 +endif()
  
  if (NOT CMAKE_CROSSCOMPILING AND NOT BUILD_STEAM_SUPPORT)
    find_package(xxhash MODULE QUIET)
 diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
-index 2a7e575d0..3eb6edc5a 100644
+index 2a7e575d0..179d1cea7 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 +++ b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -45,11 +45,9 @@ index 2a7e575d0..3eb6edc5a 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -73,7 +71,7 @@ index 2a7e575d0..3eb6edc5a 100644
  // SPDX-License-Identifier: MIT
  /*
  $info$
-@@ -520,7 +563,7 @@ static void DirectBlockDelinker(FEXCore::Context::ExitFunctionLinkData* Record,
+@@ -520,7 +561,7 @@ static void DirectBlockDelinker(FEXCore::Context::ExitFunctionLinkData* Record,
      BranchEmit.b(BranchOffset);
    }
  
@@ -82,7 +80,7 @@ index 2a7e575d0..3eb6edc5a 100644
    ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(CallerAddress), 4);
  }
  
-@@ -531,7 +574,7 @@ static void IndirectBlockDelinker(FEXCore::Context::ExitFunctionLinkData* Record
+@@ -531,7 +572,7 @@ static void IndirectBlockDelinker(FEXCore::Context::ExitFunctionLinkData* Record
    // Restore branch +2 instructions to jump to the linker block
    BranchEmit.b(0x2);
  
@@ -91,7 +89,7 @@ index 2a7e575d0..3eb6edc5a 100644
    ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(JumpThunkStartAddress), 4);
  
    // No need to reset HostCode here as the exit linker pointer is stored separately, and if the block is relinked it will be updated.
-@@ -598,11 +641,11 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
+@@ -598,11 +639,11 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
          GuestRip, Record, [](FEXCore::Context::ExitFunctionLinkData* Record) { DirectBlockDelinker(Record, false); }, lk);
      }
  
@@ -105,7 +103,7 @@ index 2a7e575d0..3eb6edc5a 100644
  #ifdef ARCHITECTURE_arm64
      // Make memory write visible to other threads reading the same location
      asm volatile("dc cvau, %0; dsb ish" : : "r"(Record->HostCode) :);
-@@ -611,7 +654,7 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
+@@ -611,7 +652,7 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
      uint32_t LdrInst = 0;
      ARMEmitter::Emitter LdrEmit(reinterpret_cast<uint8_t*>(&LdrInst), 4);
      LdrEmit.ldr(TMP1, reinterpret_cast<uint64_t>(&Record->HostCode) - JumpThunkStartAddress);
@@ -115,10 +113,10 @@ index 2a7e575d0..3eb6edc5a 100644
  
      Thread->LookupCache->AddBlockLink(GuestRip, Record, IndirectBlockDelinker, lk);
 diff --git a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
-index 01e5bb22e..edf6953e3 100644
+index 01e5bb22e..74eec2ada 100644
 --- a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
 +++ b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -137,11 +135,9 @@ index 01e5bb22e..edf6953e3 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -165,7 +161,7 @@ index 01e5bb22e..edf6953e3 100644
  // SPDX-License-Identifier: MIT
  
  #include "Interface/Core/CPUBackend.h"
-@@ -144,32 +187,32 @@ static __uint128_t LoadAcquire128(uint64_t Addr) {
+@@ -144,32 +185,32 @@ static __uint128_t LoadAcquire128(uint64_t Addr) {
  }
  
  static uint64_t LoadAcquire64(uint64_t Addr) {
@@ -204,7 +200,7 @@ index 01e5bb22e..edf6953e3 100644
    return Atom.compare_exchange_strong(Expected, Val);
  }
  
-@@ -211,7 +254,7 @@ static uint16_t DoLoad16(uint64_t Addr) {
+@@ -211,7 +252,7 @@ static uint16_t DoLoad16(uint64_t Addr) {
          uint64_t Alignment = Addr & AlignmentMask;
          Addr &= ~AlignmentMask;
  
@@ -213,7 +209,7 @@ index 01e5bb22e..edf6953e3 100644
          uint64_t TmpResult = Atomic.load();
  
          // Zexts the result
-@@ -224,7 +267,7 @@ static uint16_t DoLoad16(uint64_t Addr) {
+@@ -224,7 +265,7 @@ static uint16_t DoLoad16(uint64_t Addr) {
          uint64_t Alignment = Addr & AlignmentMask;
          Addr &= ~AlignmentMask;
  
@@ -222,7 +218,7 @@ index 01e5bb22e..edf6953e3 100644
          uint32_t TmpResult = Atomic.load();
  
          // Zexts the result
-@@ -272,7 +315,7 @@ static uint32_t DoLoad32(uint64_t Addr) {
+@@ -272,7 +313,7 @@ static uint32_t DoLoad32(uint64_t Addr) {
        uint64_t Alignment = Addr & AlignmentMask;
        Addr &= ~AlignmentMask;
  
@@ -231,7 +227,7 @@ index 01e5bb22e..edf6953e3 100644
        uint64_t TmpResult = Atomic.load();
  
        return TmpResult >> (Alignment * 8);
-@@ -466,7 +509,7 @@ static bool RunCASPAL(uint64_t* GPRs, uint32_t Size, uint32_t DesiredReg1, uint3
+@@ -466,7 +507,7 @@ static bool RunCASPAL(uint64_t* GPRs, uint32_t Size, uint32_t DesiredReg1, uint3
        // Fits within a 16byte region
        uint64_t Alignment = Addr & 0b1111;
        Addr &= ~0b1111ULL;
@@ -240,7 +236,7 @@ index 01e5bb22e..edf6953e3 100644
  
        __uint128_t Mask = ~0ULL;
        Mask <<= Alignment * 8;
-@@ -711,7 +754,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
+@@ -711,7 +752,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
        // Fits within a 16byte region
        uint64_t Alignment = Addr & 0b1111;
        Addr &= ~0b1111ULL;
@@ -249,7 +245,7 @@ index 01e5bb22e..edf6953e3 100644
  
        __uint128_t Mask = 0xFFFF;
        Mask <<= Alignment * 8;
-@@ -781,7 +824,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
+@@ -781,7 +822,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
          uint64_t TmpExpected {};
          uint64_t TmpDesired {};
  
@@ -258,7 +254,7 @@ index 01e5bb22e..edf6953e3 100644
          while (1) {
            TmpExpected = Atomic.load();
  
-@@ -844,7 +887,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
+@@ -844,7 +885,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
          uint32_t TmpExpected {};
          uint32_t TmpDesired {};
  
@@ -267,7 +263,7 @@ index 01e5bb22e..edf6953e3 100644
          while (1) {
            TmpExpected = Atomic.load();
  
-@@ -1011,7 +1054,7 @@ static uint32_t DoCAS32(uint32_t DesiredSrc, uint32_t ExpectedSrc, uint64_t Addr
+@@ -1011,7 +1052,7 @@ static uint32_t DoCAS32(uint32_t DesiredSrc, uint32_t ExpectedSrc, uint64_t Addr
        // Fits within a 16byte region
        uint64_t Alignment = Addr & 0b1111;
        Addr &= ~0b1111ULL;
@@ -276,7 +272,7 @@ index 01e5bb22e..edf6953e3 100644
  
        __uint128_t Mask = ~0U;
        Mask <<= Alignment * 8;
-@@ -1079,7 +1122,7 @@ static uint32_t DoCAS32(uint32_t DesiredSrc, uint32_t ExpectedSrc, uint64_t Addr
+@@ -1079,7 +1120,7 @@ static uint32_t DoCAS32(uint32_t DesiredSrc, uint32_t ExpectedSrc, uint64_t Addr
        uint64_t TmpExpected {};
        uint64_t TmpDesired {};
  
@@ -285,7 +281,7 @@ index 01e5bb22e..edf6953e3 100644
        while (1) {
          uint64_t TmpActual = Atomic.load();
  
-@@ -1241,7 +1284,7 @@ static uint64_t DoCAS64(uint64_t DesiredSrc, uint64_t ExpectedSrc, uint64_t Addr
+@@ -1241,7 +1282,7 @@ static uint64_t DoCAS64(uint64_t DesiredSrc, uint64_t ExpectedSrc, uint64_t Addr
      // Fits within a 16byte region
      uint64_t Alignment = Addr & AlignmentMask;
      Addr &= ~AlignmentMask;
@@ -294,7 +290,7 @@ index 01e5bb22e..edf6953e3 100644
  
      __uint128_t Mask = ~0ULL;
      Mask <<= Alignment * 8;
-@@ -2113,9 +2156,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+@@ -2113,9 +2154,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
      LDR |= DataReg;
      if (HandleType != UnalignedHandlerType::NonAtomic) {
        // Ordering matters with cross-thread visibility!
@@ -306,7 +302,7 @@ index 01e5bb22e..edf6953e3 100644
      ClearICache(&PC[0], 8);
      // With the instruction modified, now execute again.
      return 0;
-@@ -2125,9 +2168,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+@@ -2125,9 +2166,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
      STR |= AddrReg << 5;
      STR |= DataReg;
      if (HandleType != UnalignedHandlerType::NonAtomic) {
@@ -318,7 +314,7 @@ index 01e5bb22e..edf6953e3 100644
      ClearICache(&PC[-1], 8);
      // Back up one instruction and have another go
      return -4;
-@@ -2140,9 +2183,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+@@ -2140,9 +2181,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
      LDUR |= Instr & (0b1'1111'1111 << 12);
      if (HandleType != UnalignedHandlerType::NonAtomic) {
        // Ordering matters with cross-thread visibility!
@@ -330,7 +326,7 @@ index 01e5bb22e..edf6953e3 100644
      ClearICache(&PC[0], 8);
      // With the instruction modified, now execute again.
      return 0;
-@@ -2153,9 +2196,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+@@ -2153,9 +2194,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
      STUR |= DataReg;
      STUR |= Instr & (0b1'1111'1111 << 12);
      if (HandleType != UnalignedHandlerType::NonAtomic) {
@@ -342,7 +338,7 @@ index 01e5bb22e..edf6953e3 100644
  
      ClearICache(&PC[-1], 8);
      // Back up one instruction and have another go
-@@ -2166,12 +2209,12 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+@@ -2166,12 +2207,12 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
    // Since we got here, this can happen in a couple situations:
    // - Unhandled instruction (Shouldn't occur, FEX programmer error added a new unhandled atomic)
    // - Another thread backpatched an atomic access to be a non-atomic access
@@ -357,7 +353,7 @@ index 01e5bb22e..edf6953e3 100644
        if (DMBInst == DMB_LD) {
          return 0;
        }
-@@ -2182,7 +2225,7 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+@@ -2182,7 +2223,7 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
    } else if ((AtomicInst & LDSTREGISTER_MASK) == STR_INST || (AtomicInst & LDSTUNSCALED_MASK) == STUR_INST) {
      if (HandleType != UnalignedHandlerType::NonAtomic) {
        // Check if the previous instruction is a DMB.
@@ -366,7 +362,7 @@ index 01e5bb22e..edf6953e3 100644
        if (DMBInst == DMB) {
          // Return handled, make sure to adjust PC so we run the DMB.
          return -4;
-@@ -2196,8 +2239,8 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+@@ -2196,8 +2237,8 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
      // - PC[0] = DMB
      // - PC[1] = STP
      // - PC[2] = DMB
@@ -378,10 +374,10 @@ index 01e5bb22e..edf6953e3 100644
        // Code that was backpatched is what was expected for ARMv8.0-a LDAXP.
        return 0;
 diff --git a/FEXCore/Source/Utils/atomic_bitset.h b/FEXCore/Source/Utils/atomic_bitset.h
-index b4add119c..aa33a6686 100644
+index b4add119c..0c844320c 100644
 --- a/FEXCore/Source/Utils/atomic_bitset.h
 +++ b/FEXCore/Source/Utils/atomic_bitset.h
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -400,11 +396,9 @@ index b4add119c..aa33a6686 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -428,7 +422,7 @@ index b4add119c..aa33a6686 100644
  // SPDX-License-Identifier: MIT
  #pragma once
  #include <FEXCore/Utils/Allocator.h>
-@@ -99,7 +142,7 @@ public:
+@@ -99,7 +140,7 @@ public:
    bool is_set(size_t index) const {
      const size_t word_index = index / WORD_SIZE_BITS;
      const size_t word_offset = index % WORD_SIZE_BITS;
@@ -437,7 +431,7 @@ index b4add119c..aa33a6686 100644
  
      const uint64_t bit_mask = 1ULL << word_offset;
      return (word_atomic.load() & bit_mask) != 0;
-@@ -122,7 +165,7 @@ public:
+@@ -122,7 +163,7 @@ public:
      std::atomic_thread_fence(std::memory_order_release);
  
      for (size_t word_index = 0; word_index < words_to_track; ++word_index) {
@@ -446,7 +440,7 @@ index b4add119c..aa33a6686 100644
        count += std::popcount(word_atomic.load(std::memory_order_relaxed));
      }
      return count;
-@@ -158,7 +201,7 @@ private:
+@@ -158,7 +199,7 @@ private:
    size_t allocate_one(size_t beginning_word_index, size_t ending_word_index) {
      // Trivial spin.
      for (size_t i = beginning_word_index; i < ending_word_index; ++i) {
@@ -455,7 +449,7 @@ index b4add119c..aa33a6686 100644
        auto expected_word = word_atomic.load(std::memory_order_relaxed);
  
        if (expected_word == ~0ULL) {
-@@ -202,7 +245,7 @@ private:
+@@ -202,7 +243,7 @@ private:
  
    size_t allocate_inside_word(size_t count, size_t beginning_word_index, size_t ending_word_index) {
      for (size_t i = beginning_word_index; i < ending_word_index; ++i) {
@@ -464,7 +458,7 @@ index b4add119c..aa33a6686 100644
        auto expected_word = word_atomic.load(std::memory_order_relaxed);
  
        // Spin on the word trying to acquire a bit.
-@@ -281,7 +324,7 @@ private:
+@@ -281,7 +322,7 @@ private:
        size_t remaining_bits = count;
  
        auto check_head_fitment = [&]() -> bool {
@@ -473,7 +467,7 @@ index b4add119c..aa33a6686 100644
          auto base_expected_word = base_word_atomic.load(std::memory_order_relaxed);
  
          // Count the leading zeros, if it is above zero then we can start here.
-@@ -304,7 +347,7 @@ private:
+@@ -304,7 +345,7 @@ private:
  
          while (remaining_bits >= WORD_SIZE_BITS) {
            // All words in-between head and tail must be zero.
@@ -482,7 +476,7 @@ index b4add119c..aa33a6686 100644
            auto center_expected_word = center_word_atomic.load(std::memory_order_relaxed);
  
            if (center_expected_word != 0) {
-@@ -328,7 +371,7 @@ private:
+@@ -328,7 +369,7 @@ private:
            size_t tail_index = center_word_index;
  
            // Count the trailing zeros, if it fits out remaining bits then we can try and allocate.
@@ -491,7 +485,7 @@ index b4add119c..aa33a6686 100644
            auto tail_expected_word = tail_word_atomic.load(std::memory_order_relaxed);
  
            const auto trailing_zeros = std::countr_zero(tail_expected_word);
-@@ -396,7 +439,7 @@ private:
+@@ -396,7 +437,7 @@ private:
  
      // Head first.
      auto set_head_word = [&]() -> bool {
@@ -500,7 +494,7 @@ index b4add119c..aa33a6686 100644
        auto head_expected_word = head_word_atomic.load(std::memory_order_relaxed);
  
        uint64_t desired_word {};
-@@ -414,14 +457,14 @@ private:
+@@ -414,14 +455,14 @@ private:
      };
  
      auto clear_head_word = [&]() {
@@ -517,7 +511,7 @@ index b4add119c..aa33a6686 100644
          auto center_expected_word = center_word_atomic.load(std::memory_order_relaxed);
  
          // Center words set a full ~0ULL mask.
-@@ -442,13 +485,13 @@ private:
+@@ -442,13 +483,13 @@ private:
      auto clear_center_words = [&]() {
        const size_t end_center_word_index = center_words_base_index + num_center_set;
        for (size_t center_index = center_words_base_index; center_index < end_center_word_index; ++center_index) {
@@ -533,7 +527,7 @@ index b4add119c..aa33a6686 100644
        auto tail_expected_word = tail_word_atomic.load(std::memory_order_relaxed);
  
        uint64_t desired_word {};
-@@ -519,14 +562,14 @@ private:
+@@ -519,14 +560,14 @@ private:
      }
  #endif
  
@@ -550,7 +544,7 @@ index b4add119c..aa33a6686 100644
      last_allocation_track.set_last_allocation(word_index);
  
      if (count == WORD_SIZE_BITS) {
-@@ -560,13 +603,13 @@ private:
+@@ -560,13 +601,13 @@ private:
      uint64_t head_mask = head_bits == WORD_SIZE_BITS ? ~0ULL : (((1ULL << head_bits) - 1) << head_offset_start);
  
      remaining_bits -= head_bits;
@@ -566,7 +560,7 @@ index b4add119c..aa33a6686 100644
        center_word_atomic.store(0);
        remaining_bits -= WORD_SIZE_BITS;
      }
-@@ -576,7 +619,7 @@ private:
+@@ -576,7 +617,7 @@ private:
        LOGMAN_THROW_A_FMT(remaining_bits < WORD_SIZE_BITS, "Too large");
        const uint64_t tail_mask = (1ULL << remaining_bits) - 1;
  
@@ -576,10 +570,10 @@ index b4add119c..aa33a6686 100644
      }
    }
 diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
-index c5844fe10..907f9a8b0 100644
+index c5844fe10..e8985229b 100644
 --- a/FEXCore/include/FEXCore/Utils/SHMStats.h
 +++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -598,11 +592,9 @@ index c5844fe10..907f9a8b0 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -626,7 +618,7 @@ index c5844fe10..907f9a8b0 100644
  // SPDX-License-Identifier: MIT
  #pragma once
  #include <atomic>
-@@ -90,7 +133,7 @@ public:
+@@ -90,7 +131,7 @@ public:
    ~AccumulationBlock() {
      if (Stat) {
        const auto Duration = GetCycleCounter() - Begin + FlatOffset;
@@ -636,10 +628,10 @@ index c5844fe10..907f9a8b0 100644
      }
    }
 diff --git a/FEXCore/include/FEXCore/Utils/SpinWaitLock.h b/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
-index af59a6efb..79b107469 100644
+index af59a6efb..6daeb020b 100644
 --- a/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
 +++ b/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -658,11 +650,9 @@ index af59a6efb..79b107469 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -686,7 +676,7 @@ index af59a6efb..79b107469 100644
  // SPDX-License-Identifier: MIT
  #pragma once
  
-@@ -131,7 +174,7 @@ static inline uint64_t WFELoadAtomic(uint64_t* Futex) {
+@@ -131,7 +172,7 @@ static inline uint64_t WFELoadAtomic(uint64_t* Futex) {
  
  template<typename Pred, typename T>
  static inline void WaitPred(T* Futex, T ComparisonValue) {
@@ -695,7 +685,7 @@ index af59a6efb..79b107469 100644
    T Result = AtomicFutex.load();
  
    while (!Pred {}(Result, ComparisonValue)) {
-@@ -146,7 +189,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
+@@ -146,7 +187,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
  
  template<typename T, typename Pred>
  static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred Predicate) {
@@ -704,7 +694,7 @@ index af59a6efb..79b107469 100644
    T Result = AtomicFutex.load();
  
    while (!Predicate(Result & BitMask, ComparisonValue)) {
-@@ -161,7 +204,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
+@@ -161,7 +202,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
  
  template<typename T, typename TT>
  static inline bool Wait(T* Futex, TT ExpectedValue, const std::chrono::nanoseconds& Timeout) {
@@ -713,7 +703,7 @@ index af59a6efb..79b107469 100644
  
    T Result = AtomicFutex.load();
  
-@@ -198,7 +241,7 @@ template bool Wait<uint64_t>(uint64_t*, uint64_t, const std::chrono::nanoseconds
+@@ -198,7 +239,7 @@ template bool Wait<uint64_t>(uint64_t*, uint64_t, const std::chrono::nanoseconds
  
  template<typename T>
  static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
@@ -722,7 +712,7 @@ index af59a6efb..79b107469 100644
    T Result = AtomicFutex.load();
  
    // Early exit if possible.
-@@ -220,7 +263,7 @@ static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
+@@ -220,7 +261,7 @@ static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
  
  template<typename Pred, typename T>
  static inline void WaitPred(T* Futex, T ComparisonValue) {
@@ -731,7 +721,7 @@ index af59a6efb..79b107469 100644
    T Result = AtomicFutex.load();
  
    while (!Pred {}(Result, ComparisonValue)) {
-@@ -230,7 +273,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
+@@ -230,7 +271,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
  
  template<typename T, typename Pred>
  static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred Predicate) {
@@ -740,7 +730,7 @@ index af59a6efb..79b107469 100644
    T Result = AtomicFutex.load();
  
    while (!Predicate(Result & BitMask, ComparisonValue)) {
-@@ -240,7 +283,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
+@@ -240,7 +281,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
  
  template<typename T, typename TT>
  static inline bool Wait(T* Futex, TT ExpectedValue, const std::chrono::nanoseconds& Timeout) {
@@ -749,7 +739,7 @@ index af59a6efb..79b107469 100644
  
    T Result = AtomicFutex.load();
  
-@@ -278,7 +321,7 @@ template void Wait<uint64_t>(uint64_t*, uint64_t);
+@@ -278,7 +319,7 @@ template void Wait<uint64_t>(uint64_t*, uint64_t);
  
  template<typename T>
  static inline void lock(T* Futex) {
@@ -758,7 +748,7 @@ index af59a6efb..79b107469 100644
    T Expected {};
    T Desired {1};
  
-@@ -296,7 +339,7 @@ static inline void lock(T* Futex) {
+@@ -296,7 +337,7 @@ static inline void lock(T* Futex) {
  
  template<typename T>
  static inline bool try_lock(T* Futex) {
@@ -767,7 +757,7 @@ index af59a6efb..79b107469 100644
    T Expected {};
    T Desired {1};
  
-@@ -310,7 +353,7 @@ static inline bool try_lock(T* Futex) {
+@@ -310,7 +351,7 @@ static inline bool try_lock(T* Futex) {
  
  template<typename T>
  static inline void unlock(T* Futex) {
@@ -853,10 +843,10 @@ index bf1bd2bbc..0824d7b4e 100644
      uint32_t Desired {};
  
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
-index 7b0e9f91c..2bb23b0f3 100644
+index 7b0e9f91c..6800593b4 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -875,11 +865,9 @@ index 7b0e9f91c..2bb23b0f3 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -903,7 +891,7 @@ index 7b0e9f91c..2bb23b0f3 100644
  // SPDX-License-Identifier: MIT
  /*
  $info$
-@@ -159,7 +202,7 @@ void SeccompEmulator::InheritSeccompFilters(FEX::HLE::ThreadStateObject* Parent,
+@@ -159,7 +200,7 @@ void SeccompEmulator::InheritSeccompFilters(FEX::HLE::ThreadStateObject* Parent,
      auto& ParentFilter = Parent->Filters[i];
      auto& ChildFilter = Child->Filters[i];
      ChildFilter = ParentFilter;
@@ -912,7 +900,7 @@ index 7b0e9f91c..2bb23b0f3 100644
    }
  
    // Copy the operating mode.
-@@ -172,7 +215,7 @@ void SeccompEmulator::FreeSeccompFilters(FEX::HLE::ThreadStateObject* Thread) {
+@@ -172,7 +213,7 @@ void SeccompEmulator::FreeSeccompFilters(FEX::HLE::ThreadStateObject* Thread) {
  
    bool HasFiltersToDelete {};
    for (auto& Filter : Thread->Filters) {
@@ -921,7 +909,7 @@ index 7b0e9f91c..2bb23b0f3 100644
  
      if (RefCount == 1) {
        HasFiltersToDelete = true;
-@@ -183,7 +226,7 @@ void SeccompEmulator::FreeSeccompFilters(FEX::HLE::ThreadStateObject* Thread) {
+@@ -183,7 +224,7 @@ void SeccompEmulator::FreeSeccompFilters(FEX::HLE::ThreadStateObject* Thread) {
    if (HasFiltersToDelete) {
      // Garbage collect filters
      std::erase_if(Filters, [](auto& Filter) {
@@ -930,7 +918,7 @@ index 7b0e9f91c..2bb23b0f3 100644
          return false;
        }
  
-@@ -587,7 +630,7 @@ void SeccompEmulator::TSyncFilters(FEXCore::Core::CpuStateFrame* Frame) {
+@@ -587,7 +628,7 @@ void SeccompEmulator::TSyncFilters(FEXCore::Core::CpuStateFrame* Frame) {
      Thread->Filters = ParentThread->Filters;
      for (auto& Filter : ParentThread->Filters) {
        // Need to increment all the refcounters
@@ -940,10 +928,10 @@ index 7b0e9f91c..2bb23b0f3 100644
      Thread->SeccompMode = ParentThread->SeccompMode;
    }
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
-index 0a51b98a3..6426a9db5 100644
+index 0a51b98a3..2e12b8ce9 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -962,11 +950,9 @@ index 0a51b98a3..6426a9db5 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -990,7 +976,7 @@ index 0a51b98a3..6426a9db5 100644
  // SPDX-License-Identifier: MIT
  /*
  $info$
-@@ -455,7 +498,7 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+@@ -455,7 +496,7 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
      auto ThreadObject = FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame);
  
      if (ThreadObject->ThreadInfo.clear_child_tid) {
@@ -1000,10 +986,10 @@ index 0a51b98a3..6426a9db5 100644
        syscall(SYSCALL_DEF(futex), ThreadObject->ThreadInfo.clear_child_tid, FUTEX_WAKE, ~0ULL, 0, 0, 0);
      }
 diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
-index 8b9c25948..19279d87a 100644
+index 8b9c25948..0b120b974 100644
 --- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
 +++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -1022,11 +1008,9 @@ index 8b9c25948..19279d87a 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -1050,7 +1034,7 @@ index 8b9c25948..19279d87a 100644
  // SPDX-License-Identifier: MIT
  #include "LinuxSyscalls/Utils/Threads.h"
  #include "LinuxSyscalls/Syscalls.h"
-@@ -16,7 +59,7 @@ void* StackTracker::AllocateStackObject() {
+@@ -16,7 +57,7 @@ void* StackTracker::AllocateStackObject() {
    void* Ptr {};
  
    for (auto it = DeadStackPool.begin(); it != DeadStackPool.end();) {
@@ -1060,10 +1044,10 @@ index 8b9c25948..19279d87a 100644
      if (Ptr == nullptr && ReadyToBeReaped) {
        Ptr = it->Ptr;
 diff --git a/Source/Windows/WOW64/Module.cpp b/Source/Windows/WOW64/Module.cpp
-index 8c6b7f76e..69588c536 100644
+index 8c6b7f76e..e91c95247 100644
 --- a/Source/Windows/WOW64/Module.cpp
 +++ b/Source/Windows/WOW64/Module.cpp
-@@ -1,3 +1,46 @@
+@@ -1,3 +1,44 @@
 +// FEX atomic_ref compatibility shim for Android/NDK
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
 +#ifndef FEXSTD_AREF_DEFINED
@@ -1082,11 +1066,9 @@ index 8c6b7f76e..69588c536 100644
 +  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    std::atomic<T>(*ptr).store(val, mo);
 +  }
-+  // 2-argument overload (used by SpinWaitLock.h)
 +  bool compare_exchange_strong(T& expected, T desired) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired);
 +  }
-+  // 4-argument overload (used by WritePriorityMutex.h)
 +  bool compare_exchange_strong(T& expected, T desired,
 +      std::memory_order success, std::memory_order failure) noexcept {
 +    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
@@ -1110,7 +1092,7 @@ index 8c6b7f76e..69588c536 100644
  // SPDX-License-Identifier: MIT
  /*
  $info$
-@@ -81,7 +124,7 @@ struct TLS {
+@@ -81,7 +122,7 @@ struct TLS {
    }
  
    std::atomic<uint32_t>& ControlWord() const {
