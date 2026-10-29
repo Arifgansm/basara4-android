@@ -12,10 +12,10 @@ index 2d2dfdebe..c9a599c2b 100644
      " FEX only supports Linux and Windows."
      " If you believe this is in error, file an issue.")
 diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
-index c5844fe10..12a7ef963 100644
+index c5844fe10..1d7bfccdd 100644
 --- a/FEXCore/include/FEXCore/Utils/SHMStats.h
 +++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
-@@ -1,4 +1,44 @@
+@@ -1,4 +1,41 @@
  // SPDX-License-Identifier: MIT
 +// Patched: workaround for missing std_atomic_ref in NDK libc++
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
@@ -48,9 +48,6 @@ index c5844fe10..12a7ef963 100644
 +  T operator=(T desired) noexcept { store(desired); return desired; }
 +};
 +#define FEXSTD_AREF fex_atomic_ref
-+#else
-+#define FEXSTD_AREF FEXSTD_AREF
-+#endif
 +#endif // FEX_ATOMIC_REF_H
 +#else
 +#ifndef FEXSTD_AREF
@@ -60,7 +57,7 @@ index c5844fe10..12a7ef963 100644
  #pragma once
  #include <atomic>
  #include <cstddef>
-@@ -90,7 +130,7 @@ public:
+@@ -90,7 +127,7 @@ public:
    ~AccumulationBlock() {
      if (Stat) {
        const auto Duration = GetCycleCounter() - Begin + FlatOffset;
@@ -164,10 +161,10 @@ index af59a6efb..869f9b0df 100644
  }
  
 diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-index bf1bd2bbc..cb1b29f14 100644
+index bf1bd2bbc..a8e7721cf 100644
 --- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
 +++ b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-@@ -1,4 +1,44 @@
+@@ -1,4 +1,41 @@
  // SPDX-License-Identifier: MIT
 +// Patched: workaround for missing std_atomic_ref in NDK libc++
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
@@ -200,9 +197,6 @@ index bf1bd2bbc..cb1b29f14 100644
 +  T operator=(T desired) noexcept { store(desired); return desired; }
 +};
 +#define FEXSTD_AREF fex_atomic_ref
-+#else
-+#define FEXSTD_AREF FEXSTD_AREF
-+#endif
 +#endif // FEX_ATOMIC_REF_H
 +#else
 +#ifndef FEXSTD_AREF
@@ -212,7 +206,7 @@ index bf1bd2bbc..cb1b29f14 100644
  #pragma once
  #include <atomic>
  #include <cstdint>
-@@ -57,7 +97,7 @@ public:
+@@ -57,7 +94,7 @@ public:
      }
  
      // Still couldn't get it. Start waiting.
@@ -221,7 +215,7 @@ index bf1bd2bbc..cb1b29f14 100644
  
      uint32_t Expected {};
      uint32_t Desired {};
-@@ -133,7 +173,7 @@ public:
+@@ -133,7 +170,7 @@ public:
        return;
      }
  
@@ -230,7 +224,7 @@ index bf1bd2bbc..cb1b29f14 100644
  
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
-@@ -173,7 +213,7 @@ public:
+@@ -173,7 +210,7 @@ public:
    }
  
    void unlock() {
@@ -239,7 +233,7 @@ index bf1bd2bbc..cb1b29f14 100644
  
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
-@@ -204,7 +244,7 @@ public:
+@@ -204,7 +241,7 @@ public:
    }
  
    void unlock_shared() {
@@ -248,7 +242,7 @@ index bf1bd2bbc..cb1b29f14 100644
  
      uint32_t Desired {};
  #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED
-@@ -232,7 +272,7 @@ public:
+@@ -232,7 +269,7 @@ public:
    }
  
    bool try_lock() {
@@ -257,7 +251,7 @@ index bf1bd2bbc..cb1b29f14 100644
  
      uint32_t Expected = 0;
  
-@@ -245,7 +285,7 @@ public:
+@@ -245,7 +282,7 @@ public:
  
    // Can race with other threads trying to lock shared!
    bool try_lock_shared() {
@@ -266,7 +260,7 @@ index bf1bd2bbc..cb1b29f14 100644
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
  
      // Exclusively owned or has a list of waiting owners. Can't pass.
-@@ -327,7 +367,7 @@ private:
+@@ -327,7 +364,7 @@ private:
      auto Now = Begin;
      const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
  
@@ -275,7 +269,7 @@ index bf1bd2bbc..cb1b29f14 100644
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
  
      while ((Now - Begin) < Duration) {
-@@ -359,7 +399,7 @@ private:
+@@ -359,7 +396,7 @@ private:
      auto Now = Begin;
      const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
  
