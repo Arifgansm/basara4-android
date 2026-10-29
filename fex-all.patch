@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 2d2dfdebe..c9a599c2b 100644
+index 2d2dfdebe..7372ddde2 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -61,7 +61,7 @@ if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -11,6 +11,17 @@ index 2d2dfdebe..c9a599c2b 100644
    message(FATAL_ERROR "Unsupported system type ${CMAKE_SYSTEM_NAME}."
      " FEX only supports Linux and Windows."
      " If you believe this is in error, file an issue.")
+@@ -404,6 +404,10 @@ endif()
+ find_package(Python 3.9 REQUIRED COMPONENTS Interpreter)
+ 
+ set(BUILD_SHARED_LIBS OFF)
++# Override for Android shared library builds
++if(ANDROID)
++    set(BUILD_SHARED_LIBS ON)
++endif()
+ 
+ if (NOT CMAKE_CROSSCOMPILING AND NOT BUILD_STEAM_SUPPORT)
+   find_package(xxhash MODULE QUIET)
 diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 index 2a7e575d0..3eb6edc5a 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
