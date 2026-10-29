@@ -67,7 +67,7 @@ jobs:
           echo "=== Before patch ==="
           sed -n '60,70p' third_party/FEX/CMakeLists.txt
           echo "=== Applying patch ==="
-          git -C third_party/FEX apply ../fex-android-support.patch
+          git -C third_party/FEX apply ../../fex-android-support.patch
           echo "=== After patch ==="
           sed -n '60,70p' third_party/FEX/CMakeLists.txt
 
