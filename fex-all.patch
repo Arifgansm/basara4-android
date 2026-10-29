@@ -11,11 +11,362 @@ index 2d2dfdebe..c9a599c2b 100644
    message(FATAL_ERROR "Unsupported system type ${CMAKE_SYSTEM_NAME}."
      " FEX only supports Linux and Windows."
      " If you believe this is in error, file an issue.")
-diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
-index c5844fe10..1d7bfccdd 100644
---- a/FEXCore/include/FEXCore/Utils/SHMStats.h
-+++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
-@@ -1,4 +1,41 @@
+diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+index 2a7e575d0..b6c90fa8d 100644
+--- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
++++ b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+@@ -1,3 +1,44 @@
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif // FEX_ATOMIC_REF_H
++#else
++#ifndef FEXSTD_AREF
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif
++
+ // SPDX-License-Identifier: MIT
+ /*
+ $info$
+@@ -520,7 +561,7 @@ static void DirectBlockDelinker(FEXCore::Context::ExitFunctionLinkData* Record,
+     BranchEmit.b(BranchOffset);
+   }
+ 
+-  std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(CallerAddress)).store(BranchInst, std::memory_order::relaxed);
++  FEXSTD_AREF<uint32_t>(*reinterpret_cast<uint32_t*>(CallerAddress)).store(BranchInst, std::memory_order::relaxed);
+   ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(CallerAddress), 4);
+ }
+ 
+@@ -531,7 +572,7 @@ static void IndirectBlockDelinker(FEXCore::Context::ExitFunctionLinkData* Record
+   // Restore branch +2 instructions to jump to the linker block
+   BranchEmit.b(0x2);
+ 
+-  std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(JumpThunkStartAddress)).store(BranchInst, std::memory_order::relaxed);
++  FEXSTD_AREF<uint32_t>(*reinterpret_cast<uint32_t*>(JumpThunkStartAddress)).store(BranchInst, std::memory_order::relaxed);
+   ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(JumpThunkStartAddress), 4);
+ 
+   // No need to reset HostCode here as the exit linker pointer is stored separately, and if the block is relinked it will be updated.
+@@ -598,11 +639,11 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
+         GuestRip, Record, [](FEXCore::Context::ExitFunctionLinkData* Record) { DirectBlockDelinker(Record, false); }, lk);
+     }
+ 
+-    std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(CallerAddress)).store(BranchInst, std::memory_order::relaxed);
++    FEXSTD_AREF<uint32_t>(*reinterpret_cast<uint32_t*>(CallerAddress)).store(BranchInst, std::memory_order::relaxed);
+     ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(CallerAddress), 4);
+   } else {
+     // This case is common between calls and jumps as the thunk callsite can be left untouched.
+-    std::atomic_ref<uint64_t>(Record->HostCode).store(HostCode, std::memory_order::seq_cst);
++    FEXSTD_AREF<uint64_t>(Record->HostCode).store(HostCode, std::memory_order::seq_cst);
+ #ifdef ARCHITECTURE_arm64
+     // Make memory write visible to other threads reading the same location
+     asm volatile("dc cvau, %0; dsb ish" : : "r"(Record->HostCode) :);
+@@ -611,7 +652,7 @@ uint64_t Arm64JITCore::ExitFunctionLink(FEXCore::Core::CpuStateFrame* Frame, FEX
+     uint32_t LdrInst = 0;
+     ARMEmitter::Emitter LdrEmit(reinterpret_cast<uint8_t*>(&LdrInst), 4);
+     LdrEmit.ldr(TMP1, reinterpret_cast<uint64_t>(&Record->HostCode) - JumpThunkStartAddress);
+-    std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(JumpThunkStartAddress)).store(LdrInst, std::memory_order::relaxed);
++    FEXSTD_AREF<uint32_t>(*reinterpret_cast<uint32_t*>(JumpThunkStartAddress)).store(LdrInst, std::memory_order::relaxed);
+     ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(JumpThunkStartAddress), 4);
+ 
+     Thread->LookupCache->AddBlockLink(GuestRip, Record, IndirectBlockDelinker, lk);
+diff --git a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
+index 01e5bb22e..89878beee 100644
+--- a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
++++ b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
+@@ -1,3 +1,44 @@
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif // FEX_ATOMIC_REF_H
++#else
++#ifndef FEXSTD_AREF
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif
++
+ // SPDX-License-Identifier: MIT
+ 
+ #include "Interface/Core/CPUBackend.h"
+@@ -144,32 +185,32 @@ static __uint128_t LoadAcquire128(uint64_t Addr) {
+ }
+ 
+ static uint64_t LoadAcquire64(uint64_t Addr) {
+-  auto Atom = std::atomic_ref<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
++  auto Atom = FEXSTD_AREF<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
+   return Atom.load(std::memory_order_acquire);
+ }
+ 
+ static bool StoreCAS64(uint64_t& Expected, uint64_t Val, uint64_t Addr) {
+-  auto Atom = std::atomic_ref<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
++  auto Atom = FEXSTD_AREF<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
+   return Atom.compare_exchange_strong(Expected, Val);
+ }
+ 
+ static uint32_t LoadAcquire32(uint64_t Addr) {
+-  auto Atom = std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(Addr));
++  auto Atom = FEXSTD_AREF<uint32_t>(*reinterpret_cast<uint32_t*>(Addr));
+   return Atom.load(std::memory_order_acquire);
+ }
+ 
+ static bool StoreCAS32(uint32_t& Expected, uint32_t Val, uint64_t Addr) {
+-  auto Atom = std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(Addr));
++  auto Atom = FEXSTD_AREF<uint32_t>(*reinterpret_cast<uint32_t*>(Addr));
+   return Atom.compare_exchange_strong(Expected, Val);
+ }
+ 
+ static uint8_t LoadAcquire8(uint64_t Addr) {
+-  auto Atom = std::atomic_ref<uint8_t>(*reinterpret_cast<uint8_t*>(Addr));
++  auto Atom = FEXSTD_AREF<uint8_t>(*reinterpret_cast<uint8_t*>(Addr));
+   return Atom.load(std::memory_order_acquire);
+ }
+ 
+ static bool StoreCAS8(uint8_t& Expected, uint8_t Val, uint64_t Addr) {
+-  auto Atom = std::atomic_ref<uint8_t>(*reinterpret_cast<uint8_t*>(Addr));
++  auto Atom = FEXSTD_AREF<uint8_t>(*reinterpret_cast<uint8_t*>(Addr));
+   return Atom.compare_exchange_strong(Expected, Val);
+ }
+ 
+@@ -211,7 +252,7 @@ static uint16_t DoLoad16(uint64_t Addr) {
+         uint64_t Alignment = Addr & AlignmentMask;
+         Addr &= ~AlignmentMask;
+ 
+-        auto Atomic = std::atomic_ref<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
++        auto Atomic = FEXSTD_AREF<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
+         uint64_t TmpResult = Atomic.load();
+ 
+         // Zexts the result
+@@ -224,7 +265,7 @@ static uint16_t DoLoad16(uint64_t Addr) {
+         uint64_t Alignment = Addr & AlignmentMask;
+         Addr &= ~AlignmentMask;
+ 
+-        auto Atomic = std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(Addr));
++        auto Atomic = FEXSTD_AREF<uint32_t>(*reinterpret_cast<uint32_t*>(Addr));
+         uint32_t TmpResult = Atomic.load();
+ 
+         // Zexts the result
+@@ -272,7 +313,7 @@ static uint32_t DoLoad32(uint64_t Addr) {
+       uint64_t Alignment = Addr & AlignmentMask;
+       Addr &= ~AlignmentMask;
+ 
+-      auto Atomic = std::atomic_ref<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
++      auto Atomic = FEXSTD_AREF<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
+       uint64_t TmpResult = Atomic.load();
+ 
+       return TmpResult >> (Alignment * 8);
+@@ -466,7 +507,7 @@ static bool RunCASPAL(uint64_t* GPRs, uint32_t Size, uint32_t DesiredReg1, uint3
+       // Fits within a 16byte region
+       uint64_t Alignment = Addr & 0b1111;
+       Addr &= ~0b1111ULL;
+-      auto Atomic128 = std::atomic_ref<__uint128_t>(*reinterpret_cast<__uint128_t*>(Addr));
++      auto Atomic128 = FEXSTD_AREF<__uint128_t>(*reinterpret_cast<__uint128_t*>(Addr));
+ 
+       __uint128_t Mask = ~0ULL;
+       Mask <<= Alignment * 8;
+@@ -711,7 +752,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
+       // Fits within a 16byte region
+       uint64_t Alignment = Addr & 0b1111;
+       Addr &= ~0b1111ULL;
+-      auto Atomic128 = std::atomic_ref<__uint128_t>(*reinterpret_cast<__uint128_t*>(Addr));
++      auto Atomic128 = FEXSTD_AREF<__uint128_t>(*reinterpret_cast<__uint128_t*>(Addr));
+ 
+       __uint128_t Mask = 0xFFFF;
+       Mask <<= Alignment * 8;
+@@ -781,7 +822,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
+         uint64_t TmpExpected {};
+         uint64_t TmpDesired {};
+ 
+-        auto Atomic = std::atomic_ref<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
++        auto Atomic = FEXSTD_AREF<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
+         while (1) {
+           TmpExpected = Atomic.load();
+ 
+@@ -844,7 +885,7 @@ static uint16_t DoCAS16(uint16_t DesiredSrc, uint16_t ExpectedSrc, uint64_t Addr
+         uint32_t TmpExpected {};
+         uint32_t TmpDesired {};
+ 
+-        auto Atomic = std::atomic_ref<uint32_t>(*reinterpret_cast<uint32_t*>(Addr));
++        auto Atomic = FEXSTD_AREF<uint32_t>(*reinterpret_cast<uint32_t*>(Addr));
+         while (1) {
+           TmpExpected = Atomic.load();
+ 
+@@ -1011,7 +1052,7 @@ static uint32_t DoCAS32(uint32_t DesiredSrc, uint32_t ExpectedSrc, uint64_t Addr
+       // Fits within a 16byte region
+       uint64_t Alignment = Addr & 0b1111;
+       Addr &= ~0b1111ULL;
+-      auto Atomic128 = std::atomic_ref<__uint128_t>(*reinterpret_cast<__uint128_t*>(Addr));
++      auto Atomic128 = FEXSTD_AREF<__uint128_t>(*reinterpret_cast<__uint128_t*>(Addr));
+ 
+       __uint128_t Mask = ~0U;
+       Mask <<= Alignment * 8;
+@@ -1079,7 +1120,7 @@ static uint32_t DoCAS32(uint32_t DesiredSrc, uint32_t ExpectedSrc, uint64_t Addr
+       uint64_t TmpExpected {};
+       uint64_t TmpDesired {};
+ 
+-      auto Atomic = std::atomic_ref<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
++      auto Atomic = FEXSTD_AREF<uint64_t>(*reinterpret_cast<uint64_t*>(Addr));
+       while (1) {
+         uint64_t TmpActual = Atomic.load();
+ 
+@@ -1241,7 +1282,7 @@ static uint64_t DoCAS64(uint64_t DesiredSrc, uint64_t ExpectedSrc, uint64_t Addr
+     // Fits within a 16byte region
+     uint64_t Alignment = Addr & AlignmentMask;
+     Addr &= ~AlignmentMask;
+-    auto Atomic128 = std::atomic_ref<__uint128_t>(*reinterpret_cast<__uint128_t*>(Addr));
++    auto Atomic128 = FEXSTD_AREF<__uint128_t>(*reinterpret_cast<__uint128_t*>(Addr));
+ 
+     __uint128_t Mask = ~0ULL;
+     Mask <<= Alignment * 8;
+@@ -2113,9 +2154,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     LDR |= DataReg;
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+       // Ordering matters with cross-thread visibility!
+-      std::atomic_ref<uint32_t>(PC[1]).store(DMB_LD, std::memory_order_release); // Back-patch the half-barrier.
++      FEXSTD_AREF<uint32_t>(PC[1]).store(DMB_LD, std::memory_order_release); // Back-patch the half-barrier.
+     }
+-    std::atomic_ref<uint32_t>(PC[0]).store(LDR, std::memory_order_release);
++    FEXSTD_AREF<uint32_t>(PC[0]).store(LDR, std::memory_order_release);
+     ClearICache(&PC[0], 8);
+     // With the instruction modified, now execute again.
+     return 0;
+@@ -2125,9 +2166,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     STR |= AddrReg << 5;
+     STR |= DataReg;
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+-      std::atomic_ref<uint32_t>(PC[-1]).store(DMB, std::memory_order_release); // Back-patch the half-barrier.
++      FEXSTD_AREF<uint32_t>(PC[-1]).store(DMB, std::memory_order_release); // Back-patch the half-barrier.
+     }
+-    std::atomic_ref<uint32_t>(PC[0]).store(STR, std::memory_order_release);
++    FEXSTD_AREF<uint32_t>(PC[0]).store(STR, std::memory_order_release);
+     ClearICache(&PC[-1], 8);
+     // Back up one instruction and have another go
+     return -4;
+@@ -2140,9 +2181,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     LDUR |= Instr & (0b1'1111'1111 << 12);
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+       // Ordering matters with cross-thread visibility!
+-      std::atomic_ref<uint32_t>(PC[1]).store(DMB_LD, std::memory_order_release); // Back-patch the half-barrier.
++      FEXSTD_AREF<uint32_t>(PC[1]).store(DMB_LD, std::memory_order_release); // Back-patch the half-barrier.
+     }
+-    std::atomic_ref<uint32_t>(PC[0]).store(LDUR, std::memory_order_release);
++    FEXSTD_AREF<uint32_t>(PC[0]).store(LDUR, std::memory_order_release);
+     ClearICache(&PC[0], 8);
+     // With the instruction modified, now execute again.
+     return 0;
+@@ -2153,9 +2194,9 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     STUR |= DataReg;
+     STUR |= Instr & (0b1'1111'1111 << 12);
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+-      std::atomic_ref<uint32_t>(PC[-1]).store(DMB, std::memory_order_release); // Back-patch the half-barrier.
++      FEXSTD_AREF<uint32_t>(PC[-1]).store(DMB, std::memory_order_release); // Back-patch the half-barrier.
+     }
+-    std::atomic_ref<uint32_t>(PC[0]).store(STUR, std::memory_order_release);
++    FEXSTD_AREF<uint32_t>(PC[0]).store(STUR, std::memory_order_release);
+ 
+     ClearICache(&PC[-1], 8);
+     // Back up one instruction and have another go
+@@ -2166,12 +2207,12 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+   // Since we got here, this can happen in a couple situations:
+   // - Unhandled instruction (Shouldn't occur, FEX programmer error added a new unhandled atomic)
+   // - Another thread backpatched an atomic access to be a non-atomic access
+-  auto AtomicInst = std::atomic_ref<uint32_t>(PC[0]).load(std::memory_order_acquire);
++  auto AtomicInst = FEXSTD_AREF<uint32_t>(PC[0]).load(std::memory_order_acquire);
+   if ((AtomicInst & LDSTREGISTER_MASK) == LDR_INST || (AtomicInst & LDSTUNSCALED_MASK) == LDUR_INST) {
+     // This atomic instruction was backpatched to a load.
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+       // Check if the next instruction is a DMB.
+-      auto DMBInst = std::atomic_ref<uint32_t>(PC[1]).load(std::memory_order_acquire);
++      auto DMBInst = FEXSTD_AREF<uint32_t>(PC[1]).load(std::memory_order_acquire);
+       if (DMBInst == DMB_LD) {
+         return 0;
+       }
+@@ -2182,7 +2223,7 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+   } else if ((AtomicInst & LDSTREGISTER_MASK) == STR_INST || (AtomicInst & LDSTUNSCALED_MASK) == STUR_INST) {
+     if (HandleType != UnalignedHandlerType::NonAtomic) {
+       // Check if the previous instruction is a DMB.
+-      auto DMBInst = std::atomic_ref<uint32_t>(PC[-1]).load(std::memory_order_acquire);
++      auto DMBInst = FEXSTD_AREF<uint32_t>(PC[-1]).load(std::memory_order_acquire);
+       if (DMBInst == DMB) {
+         // Return handled, make sure to adjust PC so we run the DMB.
+         return -4;
+@@ -2196,8 +2237,8 @@ std::optional<int32_t> HandleUnalignedAccess(FEXCore::Core::InternalThreadState*
+     // - PC[0] = DMB
+     // - PC[1] = STP
+     // - PC[2] = DMB
+-    auto STPInst = std::atomic_ref<uint32_t>(PC[1]).load(std::memory_order_acquire);
+-    auto DMBInst = std::atomic_ref<uint32_t>(PC[2]).load(std::memory_order_acquire);
++    auto STPInst = FEXSTD_AREF<uint32_t>(PC[1]).load(std::memory_order_acquire);
++    auto DMBInst = FEXSTD_AREF<uint32_t>(PC[2]).load(std::memory_order_acquire);
+     if ((STPInst & LDSTP_MASK) == STP_INST && DMBInst == DMB) {
+       // Code that was backpatched is what was expected for ARMv8.0-a LDAXP.
+       return 0;
+diff --git a/FEXCore/Source/Utils/atomic_bitset.h b/FEXCore/Source/Utils/atomic_bitset.h
+index b4add119c..a7fbf340b 100644
+--- a/FEXCore/Source/Utils/atomic_bitset.h
++++ b/FEXCore/Source/Utils/atomic_bitset.h
+@@ -1,4 +1,44 @@
  // SPDX-License-Identifier: MIT
 +// Patched: workaround for missing std_atomic_ref in NDK libc++
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
@@ -48,6 +399,205 @@ index c5844fe10..1d7bfccdd 100644
 +  T operator=(T desired) noexcept { store(desired); return desired; }
 +};
 +#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif // FEX_ATOMIC_REF_H
++#else
++#ifndef FEXSTD_AREF
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif
+ #pragma once
+ #include <FEXCore/Utils/Allocator.h>
+ #include <FEXCore/Utils/LogManager.h>
+@@ -99,7 +139,7 @@ public:
+   bool is_set(size_t index) const {
+     const size_t word_index = index / WORD_SIZE_BITS;
+     const size_t word_offset = index % WORD_SIZE_BITS;
+-    auto word_atomic = std::atomic_ref<uint64_t>(base[word_index]);
++    auto word_atomic = FEXSTD_AREF<uint64_t>(base[word_index]);
+ 
+     const uint64_t bit_mask = 1ULL << word_offset;
+     return (word_atomic.load() & bit_mask) != 0;
+@@ -122,7 +162,7 @@ public:
+     std::atomic_thread_fence(std::memory_order_release);
+ 
+     for (size_t word_index = 0; word_index < words_to_track; ++word_index) {
+-      auto word_atomic = std::atomic_ref<uint64_t>(base[word_index]);
++      auto word_atomic = FEXSTD_AREF<uint64_t>(base[word_index]);
+       count += std::popcount(word_atomic.load(std::memory_order_relaxed));
+     }
+     return count;
+@@ -158,7 +198,7 @@ private:
+   size_t allocate_one(size_t beginning_word_index, size_t ending_word_index) {
+     // Trivial spin.
+     for (size_t i = beginning_word_index; i < ending_word_index; ++i) {
+-      auto word_atomic = std::atomic_ref<uint64_t>(base[i]);
++      auto word_atomic = FEXSTD_AREF<uint64_t>(base[i]);
+       auto expected_word = word_atomic.load(std::memory_order_relaxed);
+ 
+       if (expected_word == ~0ULL) {
+@@ -202,7 +242,7 @@ private:
+ 
+   size_t allocate_inside_word(size_t count, size_t beginning_word_index, size_t ending_word_index) {
+     for (size_t i = beginning_word_index; i < ending_word_index; ++i) {
+-      auto word_atomic = std::atomic_ref<uint64_t>(base[i]);
++      auto word_atomic = FEXSTD_AREF<uint64_t>(base[i]);
+       auto expected_word = word_atomic.load(std::memory_order_relaxed);
+ 
+       // Spin on the word trying to acquire a bit.
+@@ -281,7 +321,7 @@ private:
+       size_t remaining_bits = count;
+ 
+       auto check_head_fitment = [&]() -> bool {
+-        auto base_word_atomic = std::atomic_ref<uint64_t>(base[base_index]);
++        auto base_word_atomic = FEXSTD_AREF<uint64_t>(base[base_index]);
+         auto base_expected_word = base_word_atomic.load(std::memory_order_relaxed);
+ 
+         // Count the leading zeros, if it is above zero then we can start here.
+@@ -304,7 +344,7 @@ private:
+ 
+         while (remaining_bits >= WORD_SIZE_BITS) {
+           // All words in-between head and tail must be zero.
+-          auto center_word_atomic = std::atomic_ref<uint64_t>(base[base_index + center_word_index]);
++          auto center_word_atomic = FEXSTD_AREF<uint64_t>(base[base_index + center_word_index]);
+           auto center_expected_word = center_word_atomic.load(std::memory_order_relaxed);
+ 
+           if (center_expected_word != 0) {
+@@ -328,7 +368,7 @@ private:
+           size_t tail_index = center_word_index;
+ 
+           // Count the trailing zeros, if it fits out remaining bits then we can try and allocate.
+-          auto tail_word_atomic = std::atomic_ref<uint64_t>(base[base_index + tail_index]);
++          auto tail_word_atomic = FEXSTD_AREF<uint64_t>(base[base_index + tail_index]);
+           auto tail_expected_word = tail_word_atomic.load(std::memory_order_relaxed);
+ 
+           const auto trailing_zeros = std::countr_zero(tail_expected_word);
+@@ -396,7 +436,7 @@ private:
+ 
+     // Head first.
+     auto set_head_word = [&]() -> bool {
+-      auto head_word_atomic = std::atomic_ref<uint64_t>(base[base_index]);
++      auto head_word_atomic = FEXSTD_AREF<uint64_t>(base[base_index]);
+       auto head_expected_word = head_word_atomic.load(std::memory_order_relaxed);
+ 
+       uint64_t desired_word {};
+@@ -414,14 +454,14 @@ private:
+     };
+ 
+     auto clear_head_word = [&]() {
+-      auto head_word_atomic = std::atomic_ref<uint64_t>(base[base_index]);
++      auto head_word_atomic = FEXSTD_AREF<uint64_t>(base[base_index]);
+       head_word_atomic.fetch_and(~head_bit_mask);
+     };
+ 
+     auto set_center_words = [&]() -> bool {
+       const size_t end_center_word_index = center_words_base_index + center_words_count;
+       for (size_t center_index = center_words_base_index; center_index < end_center_word_index; ++center_index) {
+-        auto center_word_atomic = std::atomic_ref<uint64_t>(base[center_index]);
++        auto center_word_atomic = FEXSTD_AREF<uint64_t>(base[center_index]);
+         auto center_expected_word = center_word_atomic.load(std::memory_order_relaxed);
+ 
+         // Center words set a full ~0ULL mask.
+@@ -442,13 +482,13 @@ private:
+     auto clear_center_words = [&]() {
+       const size_t end_center_word_index = center_words_base_index + num_center_set;
+       for (size_t center_index = center_words_base_index; center_index < end_center_word_index; ++center_index) {
+-        auto center_word_atomic = std::atomic_ref<uint64_t>(base[center_index]);
++        auto center_word_atomic = FEXSTD_AREF<uint64_t>(base[center_index]);
+         center_word_atomic.store(0);
+       }
+     };
+ 
+     auto set_tail_word = [&]() -> bool {
+-      auto tail_word_atomic = std::atomic_ref<uint64_t>(base[tail_word_base_index]);
++      auto tail_word_atomic = FEXSTD_AREF<uint64_t>(base[tail_word_base_index]);
+       auto tail_expected_word = tail_word_atomic.load(std::memory_order_relaxed);
+ 
+       uint64_t desired_word {};
+@@ -519,14 +559,14 @@ private:
+     }
+ #endif
+ 
+-    auto word_atomic = std::atomic_ref<uint64_t>(base[word_index]);
++    auto word_atomic = FEXSTD_AREF<uint64_t>(base[word_index]);
+     word_atomic.fetch_and(~bic_bit_mask);
+   }
+ 
+   void free_inside_word(size_t index, size_t count) {
+     const size_t word_index = index / WORD_SIZE_BITS;
+     const size_t word_offset = index % WORD_SIZE_BITS;
+-    auto word_atomic = std::atomic_ref<uint64_t>(base[word_index]);
++    auto word_atomic = FEXSTD_AREF<uint64_t>(base[word_index]);
+     last_allocation_track.set_last_allocation(word_index);
+ 
+     if (count == WORD_SIZE_BITS) {
+@@ -560,13 +600,13 @@ private:
+     uint64_t head_mask = head_bits == WORD_SIZE_BITS ? ~0ULL : (((1ULL << head_bits) - 1) << head_offset_start);
+ 
+     remaining_bits -= head_bits;
+-    auto head_word_atomic = std::atomic_ref<uint64_t>(base[base_index]);
++    auto head_word_atomic = FEXSTD_AREF<uint64_t>(base[base_index]);
+     head_word_atomic.fetch_and(~head_mask);
+ 
+     const size_t remaining_center_words = remaining_bits / WORD_SIZE_BITS;
+     for (size_t i = 0; i < remaining_center_words; ++i) {
+       // Handle centers if they exist.
+-      auto center_word_atomic = std::atomic_ref<uint64_t>(base[base_index + i + 1]);
++      auto center_word_atomic = FEXSTD_AREF<uint64_t>(base[base_index + i + 1]);
+       center_word_atomic.store(0);
+       remaining_bits -= WORD_SIZE_BITS;
+     }
+@@ -576,7 +616,7 @@ private:
+       LOGMAN_THROW_A_FMT(remaining_bits < WORD_SIZE_BITS, "Too large");
+       const uint64_t tail_mask = (1ULL << remaining_bits) - 1;
+ 
+-      auto tail_word_atomic = std::atomic_ref<uint64_t>(base[base_index + remaining_center_words + 1]);
++      auto tail_word_atomic = FEXSTD_AREF<uint64_t>(base[base_index + remaining_center_words + 1]);
+       tail_word_atomic.fetch_and(~tail_mask);
+     }
+   }
+diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
+index c5844fe10..12a7ef963 100644
+--- a/FEXCore/include/FEXCore/Utils/SHMStats.h
++++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
+@@ -1,4 +1,44 @@
+ // SPDX-License-Identifier: MIT
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
 +#endif // FEX_ATOMIC_REF_H
 +#else
 +#ifndef FEXSTD_AREF
@@ -57,7 +607,7 @@ index c5844fe10..1d7bfccdd 100644
  #pragma once
  #include <atomic>
  #include <cstddef>
-@@ -90,7 +127,7 @@ public:
+@@ -90,7 +130,7 @@ public:
    ~AccumulationBlock() {
      if (Stat) {
        const auto Duration = GetCycleCounter() - Begin + FlatOffset;
@@ -67,104 +617,10 @@ index c5844fe10..1d7bfccdd 100644
      }
    }
 diff --git a/FEXCore/include/FEXCore/Utils/SpinWaitLock.h b/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
-index af59a6efb..869f9b0df 100644
+index af59a6efb..711c655f9 100644
 --- a/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
 +++ b/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
-@@ -131,7 +131,7 @@ static inline uint64_t WFELoadAtomic(uint64_t* Futex) {
- 
- template<typename Pred, typename T>
- static inline void WaitPred(T* Futex, T ComparisonValue) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
-   T Result = AtomicFutex.load();
- 
-   while (!Pred {}(Result, ComparisonValue)) {
-@@ -146,7 +146,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
- 
- template<typename T, typename Pred>
- static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred Predicate) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
-   T Result = AtomicFutex.load();
- 
-   while (!Predicate(Result & BitMask, ComparisonValue)) {
-@@ -161,7 +161,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
- 
- template<typename T, typename TT>
- static inline bool Wait(T* Futex, TT ExpectedValue, const std::chrono::nanoseconds& Timeout) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
- 
-   T Result = AtomicFutex.load();
- 
-@@ -198,7 +198,7 @@ template bool Wait<uint64_t>(uint64_t*, uint64_t, const std::chrono::nanoseconds
- 
- template<typename T>
- static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
-   T Result = AtomicFutex.load();
- 
-   // Early exit if possible.
-@@ -220,7 +220,7 @@ static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
- 
- template<typename Pred, typename T>
- static inline void WaitPred(T* Futex, T ComparisonValue) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
-   T Result = AtomicFutex.load();
- 
-   while (!Pred {}(Result, ComparisonValue)) {
-@@ -230,7 +230,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
- 
- template<typename T, typename Pred>
- static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred Predicate) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
-   T Result = AtomicFutex.load();
- 
-   while (!Predicate(Result & BitMask, ComparisonValue)) {
-@@ -240,7 +240,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
- 
- template<typename T, typename TT>
- static inline bool Wait(T* Futex, TT ExpectedValue, const std::chrono::nanoseconds& Timeout) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
- 
-   T Result = AtomicFutex.load();
- 
-@@ -278,7 +278,7 @@ template void Wait<uint64_t>(uint64_t*, uint64_t);
- 
- template<typename T>
- static inline void lock(T* Futex) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
-   T Expected {};
-   T Desired {1};
- 
-@@ -296,7 +296,7 @@ static inline void lock(T* Futex) {
- 
- template<typename T>
- static inline bool try_lock(T* Futex) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
-   T Expected {};
-   T Desired {1};
- 
-@@ -310,7 +310,7 @@ static inline bool try_lock(T* Futex) {
- 
- template<typename T>
- static inline void unlock(T* Futex) {
--  auto AtomicFutex = std::atomic_ref<T>(*Futex);
-+  auto AtomicFutex = std::atomic<T>(*Futex);
-   AtomicFutex.store(0);
- }
- 
-diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-index bf1bd2bbc..a8e7721cf 100644
---- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-+++ b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-@@ -1,4 +1,41 @@
+@@ -1,4 +1,44 @@
  // SPDX-License-Identifier: MIT
 +// Patched: workaround for missing std_atomic_ref in NDK libc++
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
@@ -197,6 +653,148 @@ index bf1bd2bbc..a8e7721cf 100644
 +  T operator=(T desired) noexcept { store(desired); return desired; }
 +};
 +#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif // FEX_ATOMIC_REF_H
++#else
++#ifndef FEXSTD_AREF
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif
+ #pragma once
+ 
+ #include <atomic>
+@@ -131,7 +171,7 @@ static inline uint64_t WFELoadAtomic(uint64_t* Futex) {
+ 
+ template<typename Pred, typename T>
+ static inline void WaitPred(T* Futex, T ComparisonValue) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+   T Result = AtomicFutex.load();
+ 
+   while (!Pred {}(Result, ComparisonValue)) {
+@@ -146,7 +186,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
+ 
+ template<typename T, typename Pred>
+ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred Predicate) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+   T Result = AtomicFutex.load();
+ 
+   while (!Predicate(Result & BitMask, ComparisonValue)) {
+@@ -161,7 +201,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
+ 
+ template<typename T, typename TT>
+ static inline bool Wait(T* Futex, TT ExpectedValue, const std::chrono::nanoseconds& Timeout) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+ 
+   T Result = AtomicFutex.load();
+ 
+@@ -198,7 +238,7 @@ template bool Wait<uint64_t>(uint64_t*, uint64_t, const std::chrono::nanoseconds
+ 
+ template<typename T>
+ static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+   T Result = AtomicFutex.load();
+ 
+   // Early exit if possible.
+@@ -220,7 +260,7 @@ static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
+ 
+ template<typename Pred, typename T>
+ static inline void WaitPred(T* Futex, T ComparisonValue) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+   T Result = AtomicFutex.load();
+ 
+   while (!Pred {}(Result, ComparisonValue)) {
+@@ -230,7 +270,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
+ 
+ template<typename T, typename Pred>
+ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred Predicate) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+   T Result = AtomicFutex.load();
+ 
+   while (!Predicate(Result & BitMask, ComparisonValue)) {
+@@ -240,7 +280,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
+ 
+ template<typename T, typename TT>
+ static inline bool Wait(T* Futex, TT ExpectedValue, const std::chrono::nanoseconds& Timeout) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+ 
+   T Result = AtomicFutex.load();
+ 
+@@ -278,7 +318,7 @@ template void Wait<uint64_t>(uint64_t*, uint64_t);
+ 
+ template<typename T>
+ static inline void lock(T* Futex) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+   T Expected {};
+   T Desired {1};
+ 
+@@ -296,7 +336,7 @@ static inline void lock(T* Futex) {
+ 
+ template<typename T>
+ static inline bool try_lock(T* Futex) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+   T Expected {};
+   T Desired {1};
+ 
+@@ -310,7 +350,7 @@ static inline bool try_lock(T* Futex) {
+ 
+ template<typename T>
+ static inline void unlock(T* Futex) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = FEXSTD_AREF<T>(*Futex);
+   AtomicFutex.store(0);
+ }
+ 
+diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
+index bf1bd2bbc..cb1b29f14 100644
+--- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
++++ b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
+@@ -1,4 +1,44 @@
+ // SPDX-License-Identifier: MIT
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
 +#endif // FEX_ATOMIC_REF_H
 +#else
 +#ifndef FEXSTD_AREF
@@ -206,7 +804,7 @@ index bf1bd2bbc..a8e7721cf 100644
  #pragma once
  #include <atomic>
  #include <cstdint>
-@@ -57,7 +94,7 @@ public:
+@@ -57,7 +97,7 @@ public:
      }
  
      // Still couldn't get it. Start waiting.
@@ -215,7 +813,7 @@ index bf1bd2bbc..a8e7721cf 100644
  
      uint32_t Expected {};
      uint32_t Desired {};
-@@ -133,7 +170,7 @@ public:
+@@ -133,7 +173,7 @@ public:
        return;
      }
  
@@ -224,7 +822,7 @@ index bf1bd2bbc..a8e7721cf 100644
  
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
-@@ -173,7 +210,7 @@ public:
+@@ -173,7 +213,7 @@ public:
    }
  
    void unlock() {
@@ -233,7 +831,7 @@ index bf1bd2bbc..a8e7721cf 100644
  
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
-@@ -204,7 +241,7 @@ public:
+@@ -204,7 +244,7 @@ public:
    }
  
    void unlock_shared() {
@@ -242,7 +840,7 @@ index bf1bd2bbc..a8e7721cf 100644
  
      uint32_t Desired {};
  #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED
-@@ -232,7 +269,7 @@ public:
+@@ -232,7 +272,7 @@ public:
    }
  
    bool try_lock() {
@@ -251,7 +849,7 @@ index bf1bd2bbc..a8e7721cf 100644
  
      uint32_t Expected = 0;
  
-@@ -245,7 +282,7 @@ public:
+@@ -245,7 +285,7 @@ public:
  
    // Can race with other threads trying to lock shared!
    bool try_lock_shared() {
@@ -260,7 +858,7 @@ index bf1bd2bbc..a8e7721cf 100644
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
  
      // Exclusively owned or has a list of waiting owners. Can't pass.
-@@ -327,7 +364,7 @@ private:
+@@ -327,7 +367,7 @@ private:
      auto Now = Begin;
      const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
  
@@ -269,7 +867,7 @@ index bf1bd2bbc..a8e7721cf 100644
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
  
      while ((Now - Begin) < Duration) {
-@@ -359,7 +396,7 @@ private:
+@@ -359,7 +399,7 @@ private:
      auto Now = Begin;
      const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
  
@@ -277,4 +875,263 @@ index bf1bd2bbc..a8e7721cf 100644
 +    auto AtomicFutex = FEXSTD_AREF<uint32_t>(Futex);
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
+ 
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
+index 7b0e9f91c..739f2be11 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Seccomp/SeccompEmulator.cpp
+@@ -1,3 +1,44 @@
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif // FEX_ATOMIC_REF_H
++#else
++#ifndef FEXSTD_AREF
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif
++
+ // SPDX-License-Identifier: MIT
+ /*
+ $info$
+@@ -159,7 +200,7 @@ void SeccompEmulator::InheritSeccompFilters(FEX::HLE::ThreadStateObject* Parent,
+     auto& ParentFilter = Parent->Filters[i];
+     auto& ChildFilter = Child->Filters[i];
+     ChildFilter = ParentFilter;
+-    std::atomic_ref<uint64_t>(ParentFilter->RefCount)++;
++    FEXSTD_AREF<uint64_t>(ParentFilter->RefCount)++;
+   }
+ 
+   // Copy the operating mode.
+@@ -172,7 +213,7 @@ void SeccompEmulator::FreeSeccompFilters(FEX::HLE::ThreadStateObject* Thread) {
+ 
+   bool HasFiltersToDelete {};
+   for (auto& Filter : Thread->Filters) {
+-    auto RefCount = std::atomic_ref<uint64_t>(Filter->RefCount).fetch_sub(1);
++    auto RefCount = FEXSTD_AREF<uint64_t>(Filter->RefCount).fetch_sub(1);
+ 
+     if (RefCount == 1) {
+       HasFiltersToDelete = true;
+@@ -183,7 +224,7 @@ void SeccompEmulator::FreeSeccompFilters(FEX::HLE::ThreadStateObject* Thread) {
+   if (HasFiltersToDelete) {
+     // Garbage collect filters
+     std::erase_if(Filters, [](auto& Filter) {
+-      if (std::atomic_ref<uint64_t>(Filter.RefCount).load(std::memory_order_relaxed) != 0) {
++      if (FEXSTD_AREF<uint64_t>(Filter.RefCount).load(std::memory_order_relaxed) != 0) {
+         return false;
+       }
+ 
+@@ -587,7 +628,7 @@ void SeccompEmulator::TSyncFilters(FEXCore::Core::CpuStateFrame* Frame) {
+     Thread->Filters = ParentThread->Filters;
+     for (auto& Filter : ParentThread->Filters) {
+       // Need to increment all the refcounters
+-      std::atomic_ref<uint64_t>(Filter->RefCount)++;
++      FEXSTD_AREF<uint64_t>(Filter->RefCount)++;
+     }
+     Thread->SeccompMode = ParentThread->SeccompMode;
+   }
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+index 0a51b98a3..0ba9ae0cb 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Syscalls/Thread.cpp
+@@ -1,3 +1,44 @@
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif // FEX_ATOMIC_REF_H
++#else
++#ifndef FEXSTD_AREF
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif
++
+ // SPDX-License-Identifier: MIT
+ /*
+ $info$
+@@ -455,7 +496,7 @@ void RegisterThread(FEX::HLE::SyscallHandler* Handler) {
+     auto ThreadObject = FEX::HLE::ThreadManager::GetStateObjectFromCPUState(Frame);
+ 
+     if (ThreadObject->ThreadInfo.clear_child_tid) {
+-      auto Addr = std::atomic_ref<int32_t>(*ThreadObject->ThreadInfo.clear_child_tid);
++      auto Addr = FEXSTD_AREF<int32_t>(*ThreadObject->ThreadInfo.clear_child_tid);
+       Addr.store(0);
+       syscall(SYSCALL_DEF(futex), ThreadObject->ThreadInfo.clear_child_tid, FUTEX_WAKE, ~0ULL, 0, 0, 0);
+     }
+diff --git a/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp b/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
+index 8b9c25948..ddfa8452e 100644
+--- a/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
++++ b/Source/Tools/LinuxEmulation/LinuxSyscalls/Utils/Threads.cpp
+@@ -1,3 +1,44 @@
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif // FEX_ATOMIC_REF_H
++#else
++#ifndef FEXSTD_AREF
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif
++
+ // SPDX-License-Identifier: MIT
+ #include "LinuxSyscalls/Utils/Threads.h"
+ #include "LinuxSyscalls/Syscalls.h"
+@@ -16,7 +57,7 @@ void* StackTracker::AllocateStackObject() {
+   void* Ptr {};
+ 
+   for (auto it = DeadStackPool.begin(); it != DeadStackPool.end();) {
+-    auto Ready = std::atomic_ref<bool>(it->ReadyToBeReaped);
++    auto Ready = FEXSTD_AREF<bool>(it->ReadyToBeReaped);
+     bool ReadyToBeReaped = Ready.load();
+     if (Ptr == nullptr && ReadyToBeReaped) {
+       Ptr = it->Ptr;
+diff --git a/Source/Windows/WOW64/Module.cpp b/Source/Windows/WOW64/Module.cpp
+index 8c6b7f76e..8c8f808d1 100644
+--- a/Source/Windows/WOW64/Module.cpp
++++ b/Source/Windows/WOW64/Module.cpp
+@@ -1,3 +1,44 @@
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define FEXSTD_AREF fex_atomic_ref
++#else
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif // FEX_ATOMIC_REF_H
++#else
++#ifndef FEXSTD_AREF
++#define FEXSTD_AREF FEXSTD_AREF
++#endif
++#endif
++
+ // SPDX-License-Identifier: MIT
+ /*
+ $info$
+@@ -81,7 +122,7 @@ struct TLS {
+   }
+ 
+   std::atomic<uint32_t>& ControlWord() const {
+-    // TODO: Change this when libc++ gains std::atomic_ref support
++    // TODO: Change this when libc++ gains FEXSTD_AREF support
+     return reinterpret_cast<std::atomic<uint32_t>&>(TEB->TlsSlots[FEXCore::ToUnderlying(Slot::CONTROL_WORD)]);
+   }
  
