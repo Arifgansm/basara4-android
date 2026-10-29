@@ -1117,4 +1117,19 @@ index 8c6b7f76e..e91c95247 100644
 +    // TODO: Change this when libc++ gains FEXSTD_AREF support
      return reinterpret_cast<std::atomic<uint32_t>&>(TEB->TlsSlots[FEXCore::ToUnderlying(Slot::CONTROL_WORD)]);
    }
- 
+
+diff --git a/FEXCore/Source/Utils/AllocatorHooks.cpp b/FEXCore/Source/Utils/AllocatorHooks.cpp
+index XXXXXX..XXXXXX 100644
+--- a/FEXCore/Source/Utils/AllocatorHooks.cpp
++++ b/FEXCore/Source/Utils/AllocatorHooks.cpp
+@@ -229,7 +229,12 @@ void* memalign(size_t align, size_t s) {
+ void* valloc(size_t size) {
+-  return ::valloc(size);
++#if defined(__ANDROID__)
++  // Android doesn't have valloc, use memalign with page size
++  return ::memalign(getpagesize(), size);
++#else
++  return ::valloc(size);
++#endif
+ }
+ int posix_memalign(void** r, size_t a, size_t s) {
