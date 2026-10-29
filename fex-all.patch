@@ -12,13 +12,15 @@ index 2d2dfdebe..c9a599c2b 100644
      " FEX only supports Linux and Windows."
      " If you believe this is in error, file an issue.")
 diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
-index c5844fe10..a3acc2d85 100644
+index c5844fe10..8547bf7f0 100644
 --- a/FEXCore/include/FEXCore/Utils/SHMStats.h
 +++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
-@@ -1,4 +1,62 @@
+@@ -1,4 +1,39 @@
  // SPDX-License-Identifier: MIT
 +// Patched: workaround for missing std_atomic_ref in NDK libc++
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
 +#include <atomic>
 +#include <cstdint>
 +
@@ -40,34 +42,8 @@ index c5844fe10..a3acc2d85 100644
 +  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    return std::atomic<T>(*ptr).fetch_add(arg, mo);
 +  }
-+  T operator=(T desired) noexcept { store(desired); return desired; }
-+};
-+#define std_atomic_ref fex_atomic_ref
-+#else
-+#define std_atomic_ref std_atomic_ref
-+#endif
-+// Patched: workaround for missing std_atomic_ref in NDK libc++
-+#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
-+#include <atomic>
-+#include <cstdint>
-+
-+template<typename T>
-+class fex_atomic_ref {
-+  T* ptr;
-+public:
-+  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
-+  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
-+    return std::atomic<T>(*ptr).load(mo);
-+  }
-+  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
-+    std::atomic<T>(*ptr).store(val, mo);
-+  }
-+  bool compare_exchange_strong(T& expected, T desired,
-+      std::memory_order success, std::memory_order failure) noexcept {
-+    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
-+  }
-+  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
-+    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
 +  }
 +  T operator=(T desired) noexcept { store(desired); return desired; }
 +};
@@ -75,10 +51,11 @@ index c5844fe10..a3acc2d85 100644
 +#else
 +#define std_atomic_ref std_atomic_ref
 +#endif
++#endif // FEX_ATOMIC_REF_H
  #pragma once
  #include <atomic>
  #include <cstddef>
-@@ -90,7 +148,7 @@ public:
+@@ -90,7 +125,7 @@ public:
    ~AccumulationBlock() {
      if (Stat) {
        const auto Duration = GetCycleCounter() - Begin + FlatOffset;
@@ -182,13 +159,15 @@ index af59a6efb..869f9b0df 100644
  }
  
 diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-index bf1bd2bbc..6bbb1300d 100644
+index bf1bd2bbc..fc8445329 100644
 --- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
 +++ b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-@@ -1,4 +1,62 @@
+@@ -1,4 +1,39 @@
  // SPDX-License-Identifier: MIT
 +// Patched: workaround for missing std_atomic_ref in NDK libc++
 +#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#ifndef FEX_ATOMIC_REF_H
++#define FEX_ATOMIC_REF_H
 +#include <atomic>
 +#include <cstdint>
 +
@@ -210,34 +189,8 @@ index bf1bd2bbc..6bbb1300d 100644
 +  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
 +    return std::atomic<T>(*ptr).fetch_add(arg, mo);
 +  }
-+  T operator=(T desired) noexcept { store(desired); return desired; }
-+};
-+#define std_atomic_ref fex_atomic_ref
-+#else
-+#define std_atomic_ref std_atomic_ref
-+#endif
-+// Patched: workaround for missing std_atomic_ref in NDK libc++
-+#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
-+#include <atomic>
-+#include <cstdint>
-+
-+template<typename T>
-+class fex_atomic_ref {
-+  T* ptr;
-+public:
-+  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
-+  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
-+    return std::atomic<T>(*ptr).load(mo);
-+  }
-+  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
-+    std::atomic<T>(*ptr).store(val, mo);
-+  }
-+  bool compare_exchange_strong(T& expected, T desired,
-+      std::memory_order success, std::memory_order failure) noexcept {
-+    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
-+  }
-+  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
-+    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  T fetch_sub(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_sub(arg, mo);
 +  }
 +  T operator=(T desired) noexcept { store(desired); return desired; }
 +};
@@ -245,10 +198,11 @@ index bf1bd2bbc..6bbb1300d 100644
 +#else
 +#define std_atomic_ref std_atomic_ref
 +#endif
++#endif // FEX_ATOMIC_REF_H
  #pragma once
  #include <atomic>
  #include <cstdint>
-@@ -57,7 +115,7 @@ public:
+@@ -57,7 +92,7 @@ public:
      }
  
      // Still couldn't get it. Start waiting.
@@ -257,7 +211,7 @@ index bf1bd2bbc..6bbb1300d 100644
  
      uint32_t Expected {};
      uint32_t Desired {};
-@@ -133,7 +191,7 @@ public:
+@@ -133,7 +168,7 @@ public:
        return;
      }
  
@@ -266,7 +220,7 @@ index bf1bd2bbc..6bbb1300d 100644
  
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
-@@ -173,7 +231,7 @@ public:
+@@ -173,7 +208,7 @@ public:
    }
  
    void unlock() {
@@ -275,7 +229,7 @@ index bf1bd2bbc..6bbb1300d 100644
  
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
      uint32_t Desired {};
-@@ -204,7 +262,7 @@ public:
+@@ -204,7 +239,7 @@ public:
    }
  
    void unlock_shared() {
@@ -284,7 +238,7 @@ index bf1bd2bbc..6bbb1300d 100644
  
      uint32_t Desired {};
  #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED
-@@ -232,7 +290,7 @@ public:
+@@ -232,7 +267,7 @@ public:
    }
  
    bool try_lock() {
@@ -293,7 +247,7 @@ index bf1bd2bbc..6bbb1300d 100644
  
      uint32_t Expected = 0;
  
-@@ -245,7 +303,7 @@ public:
+@@ -245,7 +280,7 @@ public:
  
    // Can race with other threads trying to lock shared!
    bool try_lock_shared() {
@@ -302,7 +256,7 @@ index bf1bd2bbc..6bbb1300d 100644
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
  
      // Exclusively owned or has a list of waiting owners. Can't pass.
-@@ -327,7 +385,7 @@ private:
+@@ -327,7 +362,7 @@ private:
      auto Now = Begin;
      const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
  
@@ -311,7 +265,7 @@ index bf1bd2bbc..6bbb1300d 100644
      uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
  
      while ((Now - Begin) < Duration) {
-@@ -359,7 +417,7 @@ private:
+@@ -359,7 +394,7 @@ private:
      auto Now = Begin;
      const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
  
