@@ -129,6 +129,23 @@ index 2a7e575d0..179d1cea7 100644
      ARMEmitter::Emitter::ClearICache(reinterpret_cast<void*>(JumpThunkStartAddress), 4);
  
      Thread->LookupCache->AddBlockLink(GuestRip, Record, IndirectBlockDelinker, lk);
+diff --git a/FEXCore/Source/Utils/AllocatorHooks.cpp b/FEXCore/Source/Utils/AllocatorHooks.cpp
+index 63f84a824..0cc14a6d7 100644
+--- a/FEXCore/Source/Utils/AllocatorHooks.cpp
++++ b/FEXCore/Source/Utils/AllocatorHooks.cpp
+@@ -230,7 +230,12 @@ void* memalign(size_t align, size_t s) {
+   return ::memalign(align, s);
+ }
+ void* valloc(size_t size) {
++#if defined(__ANDROID__)
++  // Android doesn't have valloc, use memalign with page size
++  return ::memalign(getpagesize(), size);
++#else
+   return ::valloc(size);
++#endif
+ }
+ int posix_memalign(void** r, size_t a, size_t s) {
+   return ::posix_memalign(r, a, s);
 diff --git a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
 index 01e5bb22e..74eec2ada 100644
 --- a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
@@ -1117,19 +1134,4 @@ index 8c6b7f76e..e91c95247 100644
 +    // TODO: Change this when libc++ gains FEXSTD_AREF support
      return reinterpret_cast<std::atomic<uint32_t>&>(TEB->TlsSlots[FEXCore::ToUnderlying(Slot::CONTROL_WORD)]);
    }
-
-diff --git a/FEXCore/Source/Utils/AllocatorHooks.cpp b/FEXCore/Source/Utils/AllocatorHooks.cpp
-index XXXXXX..XXXXXX 100644
---- a/FEXCore/Source/Utils/AllocatorHooks.cpp
-+++ b/FEXCore/Source/Utils/AllocatorHooks.cpp
-@@ -229,7 +229,12 @@ void* memalign(size_t align, size_t s) {
- void* valloc(size_t size) {
--  return ::valloc(size);
-+#if defined(__ANDROID__)
-+  // Android doesn't have valloc, use memalign with page size
-+  return ::memalign(getpagesize(), size);
-+#else
-+  return ::valloc(size);
-+#endif
- }
- int posix_memalign(void** r, size_t a, size_t s) {
+ 
