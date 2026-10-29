@@ -23,10 +23,21 @@ index 2d2dfdebe..344980dd1 100644
  if (NOT CMAKE_CROSSCOMPILING AND NOT BUILD_STEAM_SUPPORT)
    find_package(xxhash MODULE QUIET)
 diff --git a/FEXCore/Source/CMakeLists.txt b/FEXCore/Source/CMakeLists.txt
-index dd8e4aa24..6171bbc67 100644
+index dd8e4aa24..b963e2d57 100644
 --- a/FEXCore/Source/CMakeLists.txt
 +++ b/FEXCore/Source/CMakeLists.txt
-@@ -305,10 +305,11 @@ endif()
+@@ -295,6 +295,10 @@ endfunction()
+ AddObject(${PROJECT_NAME}_object)
+ AddLibrary(${PROJECT_NAME} STATIC)
+ AddLibrary(${PROJECT_NAME}_shared SHARED)
++# Explicitly link shared library to external deps (object libs don't propagate PUBLIC deps)
++if (TARGET FEXCore_shared)
++  target_link_libraries(FEXCore_shared PRIVATE ${LIBS})
++endif()
+ 
+ if (NOT MINGW AND NOT BUILD_STEAM_SUPPORT)
+   install(TARGETS ${PROJECT_NAME}_shared LIBRARY
+@@ -305,10 +309,11 @@ endif()
  # Meta-library to link jemalloc libraries enabled in the build configuration.
  # Only needed for targets that run emulation. For others, use JemallocDummy.
  add_library(JemallocLibs STATIC Utils/AllocatorHooks.cpp)
