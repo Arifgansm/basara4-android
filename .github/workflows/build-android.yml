@@ -62,14 +62,15 @@ jobs:
           echo "=== Toolchain file ==="
           ls -la "$NDK_PATH/build/cmake/android.toolchain.cmake"
 
-      - name: Apply FEX Android patch
+      - name: Apply FEX Android patches
         run: |
-          echo "=== Before patch ==="
+          echo "=== Before patching ==="
           sed -n '60,70p' third_party/FEX/CMakeLists.txt
-          echo "=== Applying patch ==="
-          git -C third_party/FEX apply ../../fex-android-support.patch
-          echo "=== After patch ==="
+          git -C third_party/FEX apply ../../fex-all.patch
+          echo "=== After patching ==="
           sed -n '60,70p' third_party/FEX/CMakeLists.txt
+          grep -c "atomic_ref" third_party/FEX/FEXCore/include/FEXCore/Utils/SpinWaitLock.h || true
+          grep -c "std_atomic_ref" third_party/FEX/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h || true
 
       - name: Cache FEXCore build
         uses: actions/cache@v4

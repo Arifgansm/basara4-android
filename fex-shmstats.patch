@@ -1,0 +1,47 @@
+diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
+index c5844fe10..42201542a 100644
+--- a/FEXCore/include/FEXCore/Utils/SHMStats.h
++++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
+@@ -1,4 +1,33 @@
+ // SPDX-License-Identifier: MIT
++// Patched: workaround for missing std_atomic_ref in NDK libc++
++#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
++#include <atomic>
++#include <cstdint>
++
++template<typename T>
++class fex_atomic_ref {
++  T* ptr;
++public:
++  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
++  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
++    return std::atomic<T>(*ptr).load(mo);
++  }
++  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    std::atomic<T>(*ptr).store(val, mo);
++  }
++  bool compare_exchange_strong(T& expected, T desired,
++      std::memory_order success, std::memory_order failure) noexcept {
++    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
++  }
++  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
++    return std::atomic<T>(*ptr).fetch_add(arg, mo);
++  }
++  T operator=(T desired) noexcept { store(desired); return desired; }
++};
++#define std_atomic_ref fex_atomic_ref
++#else
++#define std_atomic_ref std_atomic_ref
++#endif
+ #pragma once
+ #include <atomic>
+ #include <cstddef>
+@@ -90,7 +119,7 @@ public:
+   ~AccumulationBlock() {
+     if (Stat) {
+       const auto Duration = GetCycleCounter() - Begin + FlatOffset;
+-      auto ref = std::atomic_ref<T>(*Stat);
++      auto ref = std_atomic_ref<T>(*Stat);
+       ref.fetch_add(Duration, std::memory_order_relaxed);
+     }
+   }
