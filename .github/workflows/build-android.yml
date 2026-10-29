@@ -29,6 +29,10 @@ jobs:
         run: |
           git submodule status --recursive
           git submodule update --init --recursive
+          echo "=== FEX submodule commit ==="
+          git -C third_party/FEX log --oneline -3
+          echo "=== FEX CMakeLists platform check ==="
+          sed -n '55,68p' third_party/FEX/CMakeLists.txt
           ls -la third_party/
 
       - name: Install dependencies
@@ -53,30 +57,30 @@ jobs:
         run: |
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           echo "NDK_PATH=$NDK_PATH"
-          echo "=== NDK bin contents ==="
-          ls -la "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/" | head -30
+          echo "=== NDK bin compilers ==="
+          ls "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/" | grep -E "^clang|aarch64-linux-android29" || true
           echo "=== Toolchain file ==="
           ls -la "$NDK_PATH/build/cmake/android.toolchain.cmake"
-          echo "=== NDK source.properties ==="
-          cat "$NDK_PATH/source.properties" 2>/dev/null | grep "Pkg.Revision" || echo "No source.properties"
 
       - name: Cache FEXCore build
         uses: actions/cache@v4
         with:
           path: third_party/FEX/_build_android_arm64
-          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v4
+          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v5
 
       - name: Build FEXCore (shared library)
         run: |
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
-          
+
           cd third_party/FEX
-          
+
           rm -rf _build_android_arm64
           mkdir -p _build_android_arm64
           cd _build_android_arm64
-          
+
           echo "=== Configuring FEXCore with NDK toolchain ==="
+          echo "CMAKE_TOOLCHAIN_FILE=${NDK_PATH}/build/cmake/android.toolchain.cmake"
+
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="${NDK_PATH}/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a \
@@ -87,33 +91,38 @@ jobs:
             -DBUILD_FEX_LINUX_TESTS=OFF \
             -DBUILD_TESTING=OFF \
             -G Ninja \
-            2>&1 | tee /tmp/fex_configure.log | tail -50
-          
+            2>&1 | tee /tmp/fex_configure.log | tail -80
+
+          echo ""
+          echo "=== CMake system info ==="
+          grep -E "CMAKE_SYSTEM|The C compiler|The CXX compiler|processor" /tmp/fex_configure.log || true
+          echo "=== All errors in configure ==="
+          grep -E "Error|error|FATAL" /tmp/fex_configure.log || true
+
           echo "=== Building FEXCore ==="
           cmake --build . --target FEXCore -j$(nproc) 2>&1 | tee /tmp/fex_build.log
-          
+
           build_exit=$?
           echo "Build exit code: $build_exit"
-          tail -100 /tmp/fex_build.log
-          
+          tail -50 /tmp/fex_build.log
+
           if [ $build_exit -ne 0 ]; then
             echo "FEXCore BUILD FAILED"
             exit 1
           fi
-          
-          # Find and install FEXCore library
+
           mkdir -p ~/fexcore-install/lib
           mkdir -p ~/fexcore-install/include
-          
+
           echo "=== All .so files found in FEX build ==="
           find . -name "*.so" -exec ls -la {} \;
-          
+
           echo "=== Finding libFEXCore.so ==="
           find . -name "libFEXCore.so" -exec cp {} ~/fexcore-install/lib/ \;
           find . -name "libFEXCore.a" -exec cp {} ~/fexcore-install/lib/ \;
-          
+
           cp -r ../include/FEXCore ~/fexcore-install/include/ 2>/dev/null || true
-          
+
           echo "=== FEXCore installed ==="
           ls -la ~/fexcore-install/lib/
           ls -la ~/fexcore-install/include/
@@ -121,11 +130,11 @@ jobs:
       - name: Build basara4 runtime
         run: |
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
-          
+
           rm -rf build_android
           mkdir -p build_android
           cd build_android
-          
+
           echo "=== Configuring basara4-android ==="
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE="${NDK_PATH}/build/cmake/android.toolchain.cmake" \
@@ -138,37 +147,37 @@ jobs:
             -DFEXCORE_PATH=~/fexcore-install \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
             -G Ninja \
-            2>&1 | tee /tmp/basara4_configure.log | tail -50
-          
+            2>&1 | tee /tmp/basara4_configure.log | tail -80
+
           echo "=== Building basara4runtime ==="
           cmake --build . --target basara4runtime -j$(nproc) 2>&1 | tee /tmp/basara4_build.log
-          
+
           build_exit=$?
           echo "Build exit code: $build_exit"
-          tail -100 /tmp/basara4_build.log
-          
+          tail -50 /tmp/basara4_build.log
+
           echo "=== Runtime built ==="
           find . -name "*.so" -exec ls -lh {} \;
           find . -name "*.a" -exec ls -lh {} \;
-          
+
           echo "=== All .so files in build tree ==="
           find . -name "*.so" -type f 2>/dev/null
 
       - name: Prepare libraries for APK
         run: |
           mkdir -p launcher/src/main/jniLibs/arm64-v8a
-          
+
           echo "=== Current directory ==="
           pwd
-          echo "=== Launcher jniLibs exists? ==="
+          echo "=== Launcher jniLibs ==="
           ls -la launcher/src/main/jniLibs/ 2>/dev/null || echo "jniLibs does not exist"
-          
+
           echo "=== All .so files in entire repo ==="
           find . -name "*.so" -type f -exec ls -lh {} \; 2>/dev/null
-          
+
           echo "=== Copying from build_android ==="
           find build_android -name "*.so" -type f -exec echo "Found: {}" \; -exec cp {} launcher/src/main/jniLibs/arm64-v8a/ \;
-          
+
           echo "=== Copying FEXCore ==="
           if [ -f ~/fexcore-install/lib/libFEXCore.so ]; then
             cp ~/fexcore-install/lib/libFEXCore.so launcher/src/main/jniLibs/arm64-v8a/
@@ -176,10 +185,10 @@ jobs:
           else
             echo "WARNING: libFEXCore.so not found"
           fi
-          
+
           echo "=== Final library list ==="
           ls -la launcher/src/main/jniLibs/arm64-v8a/
-          
+
           echo "=== Verifying artifact path ==="
           find launcher/src/main/jniLibs/ -type f
 
