@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 90
 
     env:
-      ANDROID_NDK_VERSION: r26c
+      ANDROID_NDK_VERSION: r27c
 
     steps:
       - name: Checkout basara4-android
@@ -75,7 +75,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: third_party/FEX/_build_android_arm64
-          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v5
+          key: fexcore-${{ runner.os }}-ndk${{ env.ANDROID_NDK_VERSION }}-v6
 
       - name: Build FEXCore (shared library)
         run: |
