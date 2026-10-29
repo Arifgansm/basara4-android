@@ -1,170 +1,94 @@
-diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 2d2dfdebe..c9a599c2b 100644
---- a/CMakeLists.txt
-+++ b/CMakeLists.txt
-@@ -61,7 +61,7 @@ if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-   message(FATAL_ERROR "Unsupported pointer size ${CMAKE_SIZEOF_VOID_P}."
-     " FEX only supports 64-bit (8-byte pointer) systems."
-     " If you believe this is in error, file an issue.")
--elseif (NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
-+elseif (NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Android"))
-   message(FATAL_ERROR "Unsupported system type ${CMAKE_SYSTEM_NAME}."
-     " FEX only supports Linux and Windows."
-     " If you believe this is in error, file an issue.")
-diff --git a/FEXCore/include/FEXCore/Utils/SHMStats.h b/FEXCore/include/FEXCore/Utils/SHMStats.h
-index c5844fe10..6ed8d65b2 100644
---- a/FEXCore/include/FEXCore/Utils/SHMStats.h
-+++ b/FEXCore/include/FEXCore/Utils/SHMStats.h
-@@ -1,4 +1,33 @@
- // SPDX-License-Identifier: MIT
-+// Patched: workaround for missing std_atomic_ref in NDK libc++
-+#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
-+#include <atomic>
-+#include <cstdint>
-+
-+template<typename T>
-+class fex_atomic_ref {
-+  T* ptr;
-+public:
-+  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
-+  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
-+    return std::atomic<T>(*ptr).load(mo);
-+  }
-+  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
-+    std::atomic<T>(*ptr).store(val, mo);
-+  }
-+  bool compare_exchange_strong(T& expected, T desired,
-+      std::memory_order success, std::memory_order failure) noexcept {
-+    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
-+  }
-+  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
-+    return std::atomic<T>(*ptr).fetch_add(arg, mo);
-+  }
-+  T operator=(T desired) noexcept { store(desired); return desired; }
-+};
-+#define std_atomic_ref fex_atomic_ref
-+#else
-+#define std_atomic_ref std::atomic_ref
-+#endif
- #pragma once
- #include <atomic>
- #include <cstddef>
-@@ -90,7 +119,7 @@ public:
-   ~AccumulationBlock() {
-     if (Stat) {
-       const auto Duration = GetCycleCounter() - Begin + FlatOffset;
--      auto ref = std::atomic_ref<T>(*Stat);
-+      auto ref = std_atomic_ref<T>(*Stat);
-       ref.fetch_add(Duration, std::memory_order_relaxed);
-     }
-   }
-diff --git a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-index bf1bd2bbc..7cf84b5af 100644
---- a/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-+++ b/FEXCore/include/FEXCore/Utils/WritePriorityMutex.h
-@@ -1,4 +1,33 @@
- // SPDX-License-Identifier: MIT
-+// Patched: workaround for missing std_atomic_ref in NDK libc++
-+#if defined(__ANDROID__) && !defined(FEX_HAS_ATOMIC_REF)
-+#include <atomic>
-+#include <cstdint>
-+
-+template<typename T>
-+class fex_atomic_ref {
-+  T* ptr;
-+public:
-+  explicit fex_atomic_ref(T& ref) noexcept : ptr(&ref) {}
-+  T load(std::memory_order mo = std::memory_order_seq_cst) const noexcept {
-+    return std::atomic<T>(*ptr).load(mo);
-+  }
-+  void store(T val, std::memory_order mo = std::memory_order_seq_cst) noexcept {
-+    std::atomic<T>(*ptr).store(val, mo);
-+  }
-+  bool compare_exchange_strong(T& expected, T desired,
-+      std::memory_order success, std::memory_order failure) noexcept {
-+    return std::atomic<T>(*ptr).compare_exchange_strong(expected, desired, success, failure);
-+  }
-+  T fetch_add(T arg, std::memory_order mo = std::memory_order_seq_cst) noexcept {
-+    return std::atomic<T>(*ptr).fetch_add(arg, mo);
-+  }
-+  T operator=(T desired) noexcept { store(desired); return desired; }
-+};
-+#define std_atomic_ref fex_atomic_ref
-+#else
-+#define std_atomic_ref std::atomic_ref
-+#endif
- #pragma once
- #include <atomic>
- #include <cstdint>
-@@ -57,7 +86,7 @@ public:
-     }
+diff --git a/FEXCore/include/FEXCore/Utils/SpinWaitLock.h b/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
+index af59a6efb..869f9b0df 100644
+--- a/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
++++ b/FEXCore/include/FEXCore/Utils/SpinWaitLock.h
+@@ -131,7 +131,7 @@ static inline uint64_t WFELoadAtomic(uint64_t* Futex) {
  
-     // Still couldn't get it. Start waiting.
--    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
+ template<typename Pred, typename T>
+ static inline void WaitPred(T* Futex, T ComparisonValue) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
+   T Result = AtomicFutex.load();
  
-     uint32_t Expected {};
-     uint32_t Desired {};
-@@ -133,7 +162,7 @@ public:
-       return;
-     }
+   while (!Pred {}(Result, ComparisonValue)) {
+@@ -146,7 +146,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
  
--    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
+ template<typename T, typename Pred>
+ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred Predicate) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
+   T Result = AtomicFutex.load();
  
-     uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
-     uint32_t Desired {};
-@@ -173,7 +202,7 @@ public:
-   }
+   while (!Predicate(Result & BitMask, ComparisonValue)) {
+@@ -161,7 +161,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
  
-   void unlock() {
--    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
+ template<typename T, typename TT>
+ static inline bool Wait(T* Futex, TT ExpectedValue, const std::chrono::nanoseconds& Timeout) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
  
-     uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
-     uint32_t Desired {};
-@@ -204,7 +233,7 @@ public:
-   }
+   T Result = AtomicFutex.load();
  
-   void unlock_shared() {
--    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
+@@ -198,7 +198,7 @@ template bool Wait<uint64_t>(uint64_t*, uint64_t, const std::chrono::nanoseconds
  
-     uint32_t Desired {};
- #if defined(ASSERTIONS_ENABLED) && ASSERTIONS_ENABLED
-@@ -232,7 +261,7 @@ public:
-   }
+ template<typename T>
+ static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
+   T Result = AtomicFutex.load();
  
-   bool try_lock() {
--    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
+   // Early exit if possible.
+@@ -220,7 +220,7 @@ static inline T OneShotWFEBitComparison(T* Futex, T Mask, T Comp) {
  
-     uint32_t Expected = 0;
+ template<typename Pred, typename T>
+ static inline void WaitPred(T* Futex, T ComparisonValue) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
+   T Result = AtomicFutex.load();
  
-@@ -245,7 +274,7 @@ public:
+   while (!Pred {}(Result, ComparisonValue)) {
+@@ -230,7 +230,7 @@ static inline void WaitPred(T* Futex, T ComparisonValue) {
  
-   // Can race with other threads trying to lock shared!
-   bool try_lock_shared() {
--    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
-     uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
+ template<typename T, typename Pred>
+ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred Predicate) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
+   T Result = AtomicFutex.load();
  
-     // Exclusively owned or has a list of waiting owners. Can't pass.
-@@ -327,7 +356,7 @@ private:
-     auto Now = Begin;
-     const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
+   while (!Predicate(Result & BitMask, ComparisonValue)) {
+@@ -240,7 +240,7 @@ static inline void WaitBitMaskPred(T* Futex, T BitMask, T ComparisonValue, Pred
  
--    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
-     uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
+ template<typename T, typename TT>
+ static inline bool Wait(T* Futex, TT ExpectedValue, const std::chrono::nanoseconds& Timeout) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
  
-     while ((Now - Begin) < Duration) {
-@@ -359,7 +388,7 @@ private:
-     auto Now = Begin;
-     const auto Duration = FEXCore::Utils::SpinWaitLock::CycleCounterFrequency / CYCLECOUNT_DIVISOR;
+   T Result = AtomicFutex.load();
  
--    auto AtomicFutex = std::atomic_ref<uint32_t>(Futex);
-+    auto AtomicFutex = std_atomic_ref<uint32_t>(Futex);
-     uint32_t Expected = AtomicFutex.load(std::memory_order_relaxed);
-     uint32_t Desired {};
+@@ -278,7 +278,7 @@ template void Wait<uint64_t>(uint64_t*, uint64_t);
+ 
+ template<typename T>
+ static inline void lock(T* Futex) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
+   T Expected {};
+   T Desired {1};
+ 
+@@ -296,7 +296,7 @@ static inline void lock(T* Futex) {
+ 
+ template<typename T>
+ static inline bool try_lock(T* Futex) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
+   T Expected {};
+   T Desired {1};
+ 
+@@ -310,7 +310,7 @@ static inline bool try_lock(T* Futex) {
+ 
+ template<typename T>
+ static inline void unlock(T* Futex) {
+-  auto AtomicFutex = std::atomic_ref<T>(*Futex);
++  auto AtomicFutex = std::atomic<T>(*Futex);
+   AtomicFutex.store(0);
+ }
  
